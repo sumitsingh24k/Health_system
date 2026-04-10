@@ -1,3 +1,5 @@
+import { logServerError } from "@/app/lib/server-log";
+
 function normalizeLocation(item) {
   const address = item?.address || {};
 
@@ -36,6 +38,10 @@ export async function GET(request) {
     );
   }
 
+  if (query.length > 120) {
+    return Response.json({ message: "Search query is too long." }, { status: 400 });
+  }
+
   try {
     const searchUrl = new URL("https://nominatim.openstreetmap.org/search");
     searchUrl.searchParams.set("format", "jsonv2");
@@ -48,6 +54,7 @@ export async function GET(request) {
         "User-Agent": "health-system-location-search",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {
@@ -64,7 +71,15 @@ export async function GET(request) {
       alternatives: results,
       message: results.length ? undefined : "No location found for this area.",
     });
-  } catch (_error) {
+  } catch (error) {
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      return Response.json(
+        { message: "Location service timed out. Please try again." },
+        { status: 504 }
+      );
+    }
+
+    logServerError("api/location/search", error);
     return Response.json({ message: "Failed to search location." }, { status: 500 });
   }
 }

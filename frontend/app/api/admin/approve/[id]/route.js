@@ -1,15 +1,21 @@
 import dbConnect from "@/app/lib/dbconnect";
 import User from "@/app/lib/schema/userschema";
 import { requireAdmin } from "@/app/lib/auth/requireAdmin";
+import { logServerError } from "@/app/lib/server-log";
 
 export async function POST(_request, { params }) {
   const { error } = await requireAdmin();
   if (error) return error;
 
   try {
-    await dbConnect();
+    const resolvedParams = await params;
+    const id = typeof resolvedParams?.id === "string" ? resolvedParams.id : "";
 
-    const { id } = await params;
+    if (!/^[a-fA-F0-9]{24}$/.test(id)) {
+      return Response.json({ message: "Invalid user id" }, { status: 400 });
+    }
+
+    await dbConnect();
     const user = await User.findById(id);
 
     if (!user) {
@@ -38,6 +44,7 @@ export async function POST(_request, { params }) {
       },
     });
   } catch (error) {
+    logServerError("api/admin/approve", error);
     const reason = error instanceof Error ? error.message : "Unknown server error";
     return Response.json(
       { message: "Failed to approve user", error: reason },

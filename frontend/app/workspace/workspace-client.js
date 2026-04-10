@@ -1,17 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import {
   Activity,
   Building2,
   CheckCircle2,
   Clock3,
+  Copy,
   Crosshair,
+  LocateFixed,
   LogOut,
+  MapPin,
   ShieldCheck,
   Stethoscope,
   UserCheck,
+  Users,
 } from "lucide-react";
 import HealthMap from "@/app/components/maps/health-map";
 import { useToast } from "@/app/components/toast-provider";
@@ -91,8 +95,29 @@ function RoleIntro({ role }) {
   );
 }
 
+function normalizeText(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function locationLabel(location) {
+  if (!location?.village && !location?.district) {
+    return "Location not set";
+  }
+
+  return [location?.village, location?.district].filter(Boolean).join(", ");
+}
+
+function formatDistance(distanceKm) {
+  if (!Number.isFinite(distanceKm)) {
+    return "";
+  }
+
+  return distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m away` : `${distanceKm.toFixed(1)} km away`;
+}
+
 export default function WorkspaceClient({ user }) {
   const { toast } = useToast();
+  const didBootstrapRef = useRef(false);
   const [reports, setReports] = useState([]);
   const [pendingUsers, setPendingUsers] = useState([]);
   const [isLoadingReports, setIsLoadingReports] = useState(true);
@@ -124,6 +149,25 @@ export default function WorkspaceClient({ user }) {
     latitude: user?.location?.latitude?.toString() || "",
     longitude: user?.location?.longitude?.toString() || "",
   });
+  const [ashaLookup, setAshaLookup] = useState({
+    district: "",
+    village: "",
+    latitude: "",
+    longitude: "",
+    radiusKm: "12",
+  });
+  const [ashaDirectory, setAshaDirectory] = useState({
+    data: [],
+    exact: [],
+    nearby: [],
+    others: [],
+    context: {
+      district: null,
+      village: null,
+      radiusKm: 12,
+    },
+  });
+  const [isLoadingAshaDirectory, setIsLoadingAshaDirectory] = useState(false);
 
   const canCreateAsha = user.role === "ADMIN";
   const canSubmitReports = user.role === "ASHA" || user.role === "MEDICAL";
@@ -186,13 +230,81 @@ export default function WorkspaceClient({ user }) {
     }
   }, [canSeePendingApprovals, toast]);
 
+  const loadAshaDirectory = useCallback(
+    async (
+      activeLookup = {
+        district: "",
+        village: "",
+        latitude: "",
+        longitude: "",
+        radiusKm: "12",
+      }
+    ) => {
+      if (!canCreateAsha) return;
+      setIsLoadingAshaDirectory(true);
+
+      try {
+        const params = new URLSearchParams({ limit: "150" });
+        if (activeLookup.district) params.set("district", activeLookup.district);
+        if (activeLookup.village) params.set("village", activeLookup.village);
+        if (activeLookup.radiusKm) params.set("radiusKm", activeLookup.radiusKm);
+
+        const hasLat = normalizeText(activeLookup.latitude) !== "";
+        const hasLng = normalizeText(activeLookup.longitude) !== "";
+        if (hasLat && hasLng) {
+          params.set("latitude", activeLookup.latitude);
+          params.set("longitude", activeLookup.longitude);
+        }
+
+        const response = await fetch(`/api/admin/asha-workers?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        const payload = await readApiPayload(response);
+
+        if (!response.ok) {
+          throw new Error(resolveApiError(payload, "Failed to load ASHA directory"));
+        }
+
+        setAshaDirectory({
+          data: Array.isArray(payload?.data) ? payload.data : [],
+          exact: Array.isArray(payload?.exact) ? payload.exact : [],
+          nearby: Array.isArray(payload?.nearby) ? payload.nearby : [],
+          others: Array.isArray(payload?.others) ? payload.others : [],
+          context: payload?.context || {
+            district: null,
+            village: null,
+            radiusKm: Number(activeLookup.radiusKm) || 12,
+          },
+        });
+      } catch (error) {
+        toast.error("ASHA list failed", error.message || "Could not load ASHA details.");
+      } finally {
+        setIsLoadingAshaDirectory(false);
+      }
+    },
+    [canCreateAsha, toast]
+  );
+
   useEffect(() => {
-    loadReports(filters);
+    if (didBootstrapRef.current) return;
+    didBootstrapRef.current = true;
+
+    loadReports({
+      district: "",
+      village: "",
+      disease: "",
+      reporterRole: "",
+    });
+
     if (canSeePendingApprovals) {
       loadPendingUsers();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    if (canCreateAsha) {
+      loadAshaDirectory();
+    }
+  }, [canCreateAsha, canSeePendingApprovals, loadAshaDirectory, loadPendingUsers, loadReports]);
 
   const summary = useMemo(() => {
     return reports.reduce(
@@ -217,6 +329,38 @@ export default function WorkspaceClient({ user }) {
 
     return [...buckets.values()].sort((a, b) => b.cases - a.cases).slice(0, 5);
   }, [reports]);
+
+  const ashaSpotlight = useMemo(() => {
+    const topMatches =
+      ashaDirectory.exact.length || ashaDirectory.nearby.length
+        ? [...ashaDirectory.exact, ...ashaDirectory.nearby]
+        : ashaDirectory.data;
+    return topMatches.slice(0, 12);
+  }, [ashaDirectory]);
+
+  async function handleCopyAshaId(workerId) {
+    if (!workerId) return;
+
+    try {
+      await navigator.clipboard.writeText(workerId);
+      toast.success("Copied", `${workerId} copied to clipboard.`);
+    } catch (_error) {
+      toast.info("ASHA ID", workerId);
+    }
+  }
+
+  function applyCreateLocationToLookup() {
+    const nextLookup = {
+      district: createAshaForm.district || "",
+      village: createAshaForm.village || "",
+      latitude: createAshaForm.latitude || "",
+      longitude: createAshaForm.longitude || "",
+      radiusKm: ashaLookup.radiusKm || "12",
+    };
+
+    setAshaLookup(nextLookup);
+    return nextLookup;
+  }
 
   async function handleCreateAsha(event) {
     event.preventDefault();
@@ -245,7 +389,17 @@ export default function WorkspaceClient({ user }) {
         throw new Error(resolveApiError(payload, "Failed to create ASHA worker"));
       }
 
+      const nextLookup = {
+        district: createAshaForm.district || "",
+        village: createAshaForm.village || "",
+        latitude: createAshaForm.latitude || "",
+        longitude: createAshaForm.longitude || "",
+        radiusKm: ashaLookup.radiusKm || "12",
+      };
+
       toast.success("ASHA created", `${payload?.user?.workerId || ""} is active now.`);
+      setAshaLookup(nextLookup);
+      loadAshaDirectory(nextLookup);
       setCreateAshaForm({
         name: "",
         email: "",
@@ -386,125 +540,285 @@ export default function WorkspaceClient({ user }) {
         </section>
 
         {canCreateAsha ? (
-          <section className="grid gap-5 lg:grid-cols-2">
-            <form
-              onSubmit={handleCreateAsha}
-              className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
-            >
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={18} className="text-amber-600" />
-                <h2 className="text-lg font-bold text-slate-900">Create ASHA Worker</h2>
-              </div>
-
-              <div className="grid gap-3 md:grid-cols-2">
-                <input
-                  placeholder="Full Name"
-                  value={createAshaForm.name}
-                  onChange={(event) =>
-                    setCreateAshaForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
-                  required
-                />
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={createAshaForm.email}
-                  onChange={(event) =>
-                    setCreateAshaForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
-                  required
-                />
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={createAshaForm.password}
-                  onChange={(event) =>
-                    setCreateAshaForm((current) => ({ ...current, password: event.target.value }))
-                  }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
-                  required
-                />
-
-                <AreaSearchFields
-                  value={{
-                    village: createAshaForm.village,
-                    district: createAshaForm.district,
-                    latitude: createAshaForm.latitude,
-                    longitude: createAshaForm.longitude,
-                  }}
-                  onChange={(patch) =>
-                    setCreateAshaForm((current) => ({
-                      ...current,
-                      ...patch,
-                    }))
-                  }
-                  className="md:col-span-2"
-                />
-              </div>
-
-              <button
-                type="submit"
-                disabled={isCreatingAsha}
-                className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+          <>
+            <section className="grid gap-5 lg:grid-cols-2">
+              <form
+                onSubmit={handleCreateAsha}
+                className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
               >
-                {isCreatingAsha ? "Creating..." : "Create ASHA Worker"}
-              </button>
-            </form>
+                <div className="flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-amber-600" />
+                  <h2 className="text-lg font-bold text-slate-900">Create ASHA Worker</h2>
+                </div>
 
-            <section className="space-y-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-              <h2 className="text-lg font-bold text-slate-900">Admin Map Filters</h2>
-              <div className="grid gap-3 md:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <input
+                    placeholder="Full Name"
+                    value={createAshaForm.name}
+                    onChange={(event) =>
+                      setCreateAshaForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    required
+                  />
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={createAshaForm.email}
+                    onChange={(event) =>
+                      setCreateAshaForm((current) => ({ ...current, email: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    required
+                  />
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={createAshaForm.password}
+                    onChange={(event) =>
+                      setCreateAshaForm((current) => ({ ...current, password: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    required
+                  />
+
+                  <AreaSearchFields
+                    value={{
+                      village: createAshaForm.village,
+                      district: createAshaForm.district,
+                      latitude: createAshaForm.latitude,
+                      longitude: createAshaForm.longitude,
+                    }}
+                    onChange={(patch) =>
+                      setCreateAshaForm((current) => ({
+                        ...current,
+                        ...patch,
+                      }))
+                    }
+                    className="md:col-span-2"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isCreatingAsha}
+                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isCreatingAsha ? "Creating..." : "Create ASHA Worker"}
+                </button>
+              </form>
+
+              <section className="space-y-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+                <h2 className="text-lg font-bold text-slate-900">Admin Map Filters</h2>
+                <div className="grid gap-3 md:grid-cols-4">
+                  <input
+                    placeholder="District"
+                    value={filters.district}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, district: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  />
+                  <input
+                    placeholder="Village"
+                    value={filters.village}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, village: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  />
+                  <input
+                    placeholder="Disease"
+                    value={filters.disease}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, disease: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  />
+                  <select
+                    value={filters.reporterRole}
+                    onChange={(event) =>
+                      setFilters((current) => ({ ...current, reporterRole: event.target.value }))
+                    }
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  >
+                    <option value="">All Sources</option>
+                    <option value="ASHA">ASHA</option>
+                    <option value="MEDICAL">MEDICAL</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadReports(filters)}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
+                >
+                  Apply Filters
+                </button>
+                <p className="text-xs text-slate-500">
+                  Admin can inspect outbreak markers for any location using district, village, and
+                  disease filters.
+                </p>
+              </section>
+            </section>
+
+            <section className="rounded-3xl border border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff_0%,#ffffff_45%,#f0f9ff_100%)] p-5 shadow-sm md:p-6">
+              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-cyan-700">
+                    <Users size={14} />
+                    ASHA MEMORY BOARD
+                  </p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-900">
+                    Remember ASHA IDs by exact or nearby location
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => loadAshaDirectory(ashaLookup)}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-300 bg-white px-3 py-2 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-50"
+                >
+                  <LocateFixed size={15} />
+                  Refresh Board
+                </button>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-6">
                 <input
                   placeholder="District"
-                  value={filters.district}
+                  value={ashaLookup.district}
                   onChange={(event) =>
-                    setFilters((current) => ({ ...current, district: event.target.value }))
+                    setAshaLookup((current) => ({ ...current, district: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-cyan-100 focus:border-cyan-500 focus:ring md:col-span-2"
                 />
                 <input
                   placeholder="Village"
-                  value={filters.village}
+                  value={ashaLookup.village}
                   onChange={(event) =>
-                    setFilters((current) => ({ ...current, village: event.target.value }))
+                    setAshaLookup((current) => ({ ...current, village: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-cyan-100 focus:border-cyan-500 focus:ring md:col-span-2"
                 />
                 <input
-                  placeholder="Disease"
-                  value={filters.disease}
+                  type="number"
+                  min="1"
+                  max="50"
+                  step="1"
+                  placeholder="Nearby Radius (km)"
+                  value={ashaLookup.radiusKm}
                   onChange={(event) =>
-                    setFilters((current) => ({ ...current, disease: event.target.value }))
+                    setAshaLookup((current) => ({ ...current, radiusKm: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-cyan-100 focus:border-cyan-500 focus:ring"
                 />
-                <select
-                  value={filters.reporterRole}
-                  onChange={(event) =>
-                    setFilters((current) => ({ ...current, reporterRole: event.target.value }))
-                  }
-                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextLookup = applyCreateLocationToLookup();
+                    loadAshaDirectory(nextLookup);
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
                 >
-                  <option value="">All Sources</option>
-                  <option value="ASHA">ASHA</option>
-                  <option value="MEDICAL">MEDICAL</option>
-                </select>
+                  Use Create Form Location
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => loadReports(filters)}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
-              >
-                Apply Filters
-              </button>
-              <p className="text-xs text-slate-500">
-                Admin can inspect outbreak markers for any location using district, village, and disease
-                filters.
-              </p>
+
+              <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <div className="rounded-2xl border border-cyan-100 bg-white/90 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total ASHA</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">{ashaDirectory.data.length}</p>
+                </div>
+                <div className="rounded-2xl border border-emerald-100 bg-white/90 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Exact Location
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-700">{ashaDirectory.exact.length}</p>
+                </div>
+                <div className="rounded-2xl border border-amber-100 bg-white/90 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Nearby Match
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-amber-700">{ashaDirectory.nearby.length}</p>
+                </div>
+                <div className="rounded-2xl border border-violet-100 bg-white/90 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Search Radius
+                  </p>
+                  <p className="mt-1 text-2xl font-bold text-violet-700">
+                    {ashaDirectory.context?.radiusKm || 12} km
+                  </p>
+                </div>
+              </div>
+
+              {isLoadingAshaDirectory ? (
+                <p className="mt-4 text-sm text-slate-500">Loading ASHA memory board...</p>
+              ) : null}
+
+              {!isLoadingAshaDirectory && ashaSpotlight.length === 0 ? (
+                <p className="mt-4 text-sm text-slate-500">
+                  No ASHA workers found for this filter. Try district-only search for wider nearby results.
+                </p>
+              ) : null}
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                {ashaSpotlight.map((worker) => {
+                  const districtMatches =
+                    normalizeText(worker?.location?.district) ===
+                    normalizeText(ashaDirectory.context?.district);
+                  const villageMatches =
+                    normalizeText(worker?.location?.village) === normalizeText(ashaDirectory.context?.village);
+
+                  const matchTag =
+                    districtMatches && villageMatches
+                      ? "Exact area"
+                      : districtMatches
+                        ? "Nearby district"
+                        : "Other area";
+
+                  return (
+                    <article
+                      key={worker.id}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-900">{worker.name}</p>
+                          <p className="truncate text-xs text-slate-500">{worker.email}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAshaId(worker.workerId)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                        >
+                          <Copy size={13} />
+                          ID
+                        </button>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-full bg-slate-900 px-2.5 py-1 font-semibold text-white">
+                          {worker.workerId || "NO_ID"}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-700">
+                          {matchTag}
+                        </span>
+                        {worker.distanceKm !== null ? (
+                          <span className="rounded-full bg-cyan-100 px-2.5 py-1 font-medium text-cyan-800">
+                            {formatDistance(worker.distanceKm)}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <p className="mt-3 inline-flex items-center gap-1 text-xs text-slate-600">
+                        <MapPin size={12} />
+                        {locationLabel(worker.location)}
+                      </p>
+                    </article>
+                  );
+                })}
+              </div>
             </section>
-          </section>
+          </>
         ) : null}
 
         {canSeePendingApprovals ? (

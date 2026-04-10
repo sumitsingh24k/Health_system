@@ -1,6 +1,7 @@
 import dbConnect from "@/app/lib/dbconnect";
 import User from "@/app/lib/schema/userschema";
 import { requireAdmin } from "@/app/lib/auth/requireAdmin";
+import { logServerError } from "@/app/lib/server-log";
 
 function serializeUser(user) {
   return {
@@ -33,6 +34,7 @@ export async function GET() {
       data: users.map(serializeUser),
     });
   } catch (error) {
+    logServerError("api/admin/pending-users", error);
     const reason = error instanceof Error ? error.message : "Unknown server error";
     return Response.json(
       { message: "Failed to fetch pending users", error: reason },

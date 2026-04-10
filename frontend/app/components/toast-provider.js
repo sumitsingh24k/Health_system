@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 const ToastContext = createContext(null);
 
@@ -21,9 +21,27 @@ const TOAST_STYLES = {
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const toastTimeoutsRef = useRef(new Map());
 
   const dismissToast = useCallback((id) => {
+    const timeoutId = toastTimeoutsRef.current.get(id);
+    if (timeoutId) {
+      window.clearTimeout(timeoutId);
+      toastTimeoutsRef.current.delete(id);
+    }
+
     setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  useEffect(() => {
+    const toastTimeouts = toastTimeoutsRef.current;
+
+    return () => {
+      for (const timeoutId of toastTimeouts.values()) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimeouts.clear();
+    };
   }, []);
 
   const showToast = useCallback(
@@ -39,9 +57,13 @@ export function ToastProvider({ children }) {
       ]);
 
       const timeoutMs = Number.isFinite(duration) ? Math.max(duration, 1200) : 3500;
-      window.setTimeout(() => dismissToast(toastId), timeoutMs);
+      const timeoutId = window.setTimeout(() => {
+        toastTimeoutsRef.current.delete(toastId);
+        setToasts((current) => current.filter((toast) => toast.id !== toastId));
+      }, timeoutMs);
+      toastTimeoutsRef.current.set(toastId, timeoutId);
     },
-    [dismissToast]
+    []
   );
 
   const value = useMemo(

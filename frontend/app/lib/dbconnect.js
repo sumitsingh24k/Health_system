@@ -2,10 +2,6 @@ import mongoose from "mongoose";
 
 const MONGO_URI = process.env.MONGO_URI;
 
-if (!MONGO_URI) {
-  throw new Error("MONGO_URI is missing from environment variables");
-}
-
 let cached = global.mongoose;
 
 if (!cached) {
@@ -44,6 +40,10 @@ function toDatabaseError(error) {
 }
 
 export default async function dbConnect() {
+  if (!MONGO_URI) {
+    throw new Error("Database connection failed: MONGO_URI is missing from environment variables.");
+  }
+
   if (cached.conn) {
     return cached.conn;
   }
@@ -54,6 +54,8 @@ export default async function dbConnect() {
         serverSelectionTimeoutMS: 10000,
         connectTimeoutMS: 10000,
         socketTimeoutMS: 20000,
+        maxPoolSize: 10,
+        minPoolSize: 0,
       })
       .then((mongooseInstance) => {
         return mongooseInstance;

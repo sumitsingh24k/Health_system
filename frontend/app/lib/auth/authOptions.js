@@ -1,16 +1,23 @@
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcrypt";
 import dbConnect from "@/app/lib/dbconnect";
 import User from "@/app/lib/schema/userschema";
+import { verifyPassword } from "@/app/lib/auth/password-utils";
 
 if (!process.env.NEXTAUTH_URL) {
   process.env.NEXTAUTH_URL = `http://localhost:${process.env.PORT || "3000"}`;
 }
 
-const NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
-if (!NEXTAUTH_SECRET) {
-  throw new Error("NEXTAUTH_SECRET (or AUTH_SECRET) must be set");
+const RESOLVED_NEXTAUTH_SECRET = process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET;
+if (!RESOLVED_NEXTAUTH_SECRET && process.env.NODE_ENV === "production") {
+  throw new Error("NEXTAUTH_SECRET (or AUTH_SECRET) must be set in production");
 }
+
+if (!RESOLVED_NEXTAUTH_SECRET && process.env.NODE_ENV !== "production") {
+  console.warn("[auth] NEXTAUTH_SECRET is missing. Using a local development fallback secret.");
+}
+
+const NEXTAUTH_SECRET =
+  RESOLVED_NEXTAUTH_SECRET || "dev-only-secret-change-before-production";
 
 const STATIC_ADMIN_USERNAME = process.env.ADMIN_USERNAME || "admin";
 const STATIC_ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
@@ -25,8 +32,10 @@ export const authOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const loginId = credentials?.username?.trim();
-        const password = credentials?.password;
+        const loginId =
+          typeof credentials?.username === "string" ? credentials.username.trim() : "";
+        const password =
+          typeof credentials?.password === "string" ? credentials.password : "";
 
         if (!loginId || !password) {
           throw new Error("Login ID and password are required");
@@ -57,10 +66,7 @@ export const authOptions = {
           throw new Error("Invalid credentials");
         }
 
-        const isPasswordValid = await bcrypt.compare(
-          password,
-          user.password
-        );
+        const isPasswordValid = await verifyPassword(password, user.password);
 
         if (!isPasswordValid) {
           throw new Error("Invalid credentials");

@@ -1,23 +1,46 @@
-import bcrypt from "bcrypt";
 import dbConnect from "@/app/lib/dbconnect";
 import User from "@/app/lib/schema/userschema";
 import { requireAdmin } from "@/app/lib/auth/requireAdmin";
 import { buildLocation } from "@/app/lib/location-utils";
+import { hashPassword } from "@/app/lib/auth/password-utils";
+import { parseJsonBody, normalizeEmail, normalizeRequiredString } from "@/app/lib/request-utils";
+import { logServerError } from "@/app/lib/server-log";
 
 async function generateWorkerId() {
-  const ashaUsers = await User.find({
-    role: "ASHA",
-    workerId: { $regex: /^ASHA_\d+$/ },
-  })
-    .select("workerId")
-    .lean();
+  const [latest] = await User.aggregate([
+    {
+      $match: {
+        role: "ASHA",
+        workerId: { $type: "string" },
+      },
+    },
+    {
+      $addFields: {
+        workerSequence: {
+          $cond: [
+            { $regexMatch: { input: "$workerId", regex: /^ASHA_\d+$/ } },
+            {
+              $toInt: {
+                $arrayElemAt: [{ $split: ["$workerId", "_"] }, 1],
+              },
+            },
+            null,
+          ],
+        },
+      },
+    },
+    { $match: { workerSequence: { $ne: null } } },
+    { $sort: { workerSequence: -1 } },
+    { $limit: 1 },
+    { $project: { _id: 0, workerSequence: 1 } },
+  ]);
 
-  const maxNumber = ashaUsers.reduce((max, item) => {
-    const current = Number.parseInt((item.workerId || "").split("_")[1], 10);
-    return Number.isFinite(current) && current > max ? current : max;
-  }, 0);
+  const nextNumber =
+    Number.isInteger(latest?.workerSequence) && latest.workerSequence > 0
+      ? latest.workerSequence + 1
+      : 1;
 
-  return `ASHA_${String(maxNumber + 1).padStart(3, "0")}`;
+  return `ASHA_${String(nextNumber).padStart(3, "0")}`;
 }
 
 export async function POST(request) {
@@ -25,8 +48,13 @@ export async function POST(request) {
   if (error) return error;
 
   try {
-    const body = await request.json();
-    const { name, email, password, location } = body || {};
+    const { body, error: parseError } = await parseJsonBody(request);
+    if (parseError) return parseError;
+
+    const name = normalizeRequiredString(body?.name);
+    const email = normalizeEmail(body?.email);
+    const password = normalizeRequiredString(body?.password);
+    const { location } = body || {};
 
     if (!name || !email || !password) {
       return Response.json(
@@ -42,14 +70,13 @@ export async function POST(request) {
 
     await dbConnect();
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail }).select("_id");
+    const existingUser = await User.findOne({ email }).select("_id");
 
     if (existingUser) {
       return Response.json({ message: "Email already exists" }, { status: 409 });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await hashPassword(password, 10);
     let user = null;
     let attempt = 0;
 
@@ -59,8 +86,8 @@ export async function POST(request) {
 
       try {
         user = await User.create({
-          name: name.trim(),
-          email: normalizedEmail,
+          name,
+          email,
           password: hashedPassword,
           role: "ASHA",
           workerId,
@@ -99,6 +126,7 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
+    logServerError("api/admin/create-asha", error);
     const reason = error instanceof Error ? error.message : "Unknown server error";
     return Response.json(
       { message: "Failed to create ASHA worker", error: reason },

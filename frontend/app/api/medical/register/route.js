@@ -1,12 +1,19 @@
-import bcrypt from "bcrypt";
 import dbConnect from "@/app/lib/dbconnect";
 import User from "@/app/lib/schema/userschema";
 import { buildLocation } from "@/app/lib/location-utils";
+import { hashPassword } from "@/app/lib/auth/password-utils";
+import { parseJsonBody, normalizeEmail, normalizeRequiredString } from "@/app/lib/request-utils";
+import { logServerError } from "@/app/lib/server-log";
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { name, email, password, location } = body || {};
+    const { body, error: parseError } = await parseJsonBody(request);
+    if (parseError) return parseError;
+
+    const name = normalizeRequiredString(body?.name);
+    const email = normalizeEmail(body?.email);
+    const password = normalizeRequiredString(body?.password);
+    const { location } = body || {};
 
     if (!name || !email || !password) {
       return Response.json(
@@ -22,18 +29,17 @@ export async function POST(request) {
 
     await dbConnect();
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await User.findOne({ email: normalizedEmail }).select("_id");
+    const existingUser = await User.findOne({ email }).select("_id");
 
     if (existingUser) {
       return Response.json({ message: "Email already exists" }, { status: 409 });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await hashPassword(password, 10);
 
     const user = await User.create({
-      name: name.trim(),
-      email: normalizedEmail,
+      name,
+      email,
       password: hashedPassword,
       role: "MEDICAL",
       location: normalizedLocation,
@@ -55,6 +61,7 @@ export async function POST(request) {
       { status: 201 }
     );
   } catch (error) {
+    logServerError("api/medical/register", error);
     const reason = error instanceof Error ? error.message : "Unknown server error";
     return Response.json(
       { message: "Failed to register medical user", error: reason },
