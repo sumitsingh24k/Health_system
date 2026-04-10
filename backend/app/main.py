@@ -4,8 +4,6 @@ import logging
 from fastapi import FastAPI
 
 from app.api.cases import router as cases_router
-from app.api.stats import router as stats_router
-from app.api.workers import router as workers_router
 from app.db.indexes import create_indexes
 from app.db.mongo import mongodb
 
@@ -37,6 +35,4 @@ async def health() -> dict[str, str | bool]:
     }
 
 
-app.include_router(workers_router, prefix="/api/v1")
 app.include_router(cases_router, prefix="/api/v1")
-app.include_router(stats_router, prefix="/api/v1")

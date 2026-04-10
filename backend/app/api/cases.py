@@ -1,25 +1,95 @@
-from fastapi import APIRouter, Depends, Query, status
+from datetime import datetime, timezone
 
-from app.api.deps import get_current_worker_id
-from app.models.case import CaseCreateRequest, CaseResponse
-from app.services.case_service import create_case, get_cases_by_area
+from fastapi import APIRouter, File, Form, Query, UploadFile, status
+
+from app.models.case import IngestionResult, TextIngestionRequest
+from app.services.case_service import (
+    ingest_asha_submission,
+    ingest_medical_shop_submission,
+    list_records_by_location,
+)
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
 
-@router.post("", response_model=CaseResponse, status_code=status.HTTP_201_CREATED)
-async def add_case(
-    payload: CaseCreateRequest,
-    worker_id: str = Depends(get_current_worker_id),
-) -> CaseResponse:
-    case = await create_case(payload, worker_id)
-    return CaseResponse(**case)
+@router.post("/asha/text", response_model=IngestionResult, status_code=status.HTTP_201_CREATED)
+async def ingest_asha_text(payload: TextIngestionRequest) -> IngestionResult:
+    result = await ingest_asha_submission(
+        worker_id=payload.worker_id,
+        location=payload.location,
+        symptoms_raw=payload.symptoms,
+        cases_count=payload.cases_count,
+        text=payload.text,
+        audio_file=None,
+        timestamp=payload.timestamp or datetime.now(timezone.utc),
+    )
+    return IngestionResult(**result)
 
 
-@router.get("", response_model=list[CaseResponse])
-async def list_cases_by_area(
-    pincode: str = Query(..., min_length=6, max_length=6),
+@router.post("/asha", response_model=IngestionResult, status_code=status.HTTP_201_CREATED)
+async def ingest_asha(
+    worker_id: str = Form(...),
+    location: str = Form(...),
+    symptoms: str = Form(...),
+    cases_count: int = Form(...),
+    text: str | None = Form(default=None),
+    audio_file: UploadFile | None = File(default=None),
+    timestamp: datetime | None = Form(default=None),
+) -> IngestionResult:
+    result = await ingest_asha_submission(
+        worker_id=worker_id,
+        location=location,
+        symptoms_raw=symptoms,
+        cases_count=cases_count,
+        text=text,
+        audio_file=audio_file,
+        timestamp=timestamp or datetime.now(timezone.utc),
+    )
+    return IngestionResult(**result)
+
+
+@router.post(
+    "/medical-shop/text", response_model=IngestionResult, status_code=status.HTTP_201_CREATED
+)
+async def ingest_medical_shop_text(payload: TextIngestionRequest) -> IngestionResult:
+    result = await ingest_medical_shop_submission(
+        worker_id=payload.worker_id,
+        location=payload.location,
+        symptoms_raw=payload.symptoms,
+        cases_count=payload.cases_count,
+        text=payload.text,
+        audio_file=None,
+        timestamp=payload.timestamp or datetime.now(timezone.utc),
+    )
+    return IngestionResult(**result)
+
+
+@router.post("/medical-shop", response_model=IngestionResult, status_code=status.HTTP_201_CREATED)
+async def ingest_medical_shop(
+    worker_id: str = Form(...),
+    location: str = Form(...),
+    symptoms: str = Form(...),
+    cases_count: int = Form(...),
+    text: str | None = Form(default=None),
+    audio_file: UploadFile | None = File(default=None),
+    timestamp: datetime | None = Form(default=None),
+) -> IngestionResult:
+    result = await ingest_medical_shop_submission(
+        worker_id=worker_id,
+        location=location,
+        symptoms_raw=symptoms,
+        cases_count=cases_count,
+        text=text,
+        audio_file=audio_file,
+        timestamp=timestamp or datetime.now(timezone.utc),
+    )
+    return IngestionResult(**result)
+
+
+@router.get("", response_model=list[IngestionResult])
+async def list_by_location(
+    location: str = Query(..., min_length=6, max_length=6),
     limit: int = Query(50, ge=1, le=200),
-) -> list[CaseResponse]:
-    cases = await get_cases_by_area(pincode=pincode, limit=limit)
-    return [CaseResponse(**case) for case in cases]
+) -> list[IngestionResult]:
+    records = await list_records_by_location(location=location, limit=limit)
+    return [IngestionResult(**record) for record in records]
