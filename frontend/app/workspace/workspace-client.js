@@ -30,6 +30,22 @@ import {
   toPredictionPayload,
 } from "@/app/lib/backend-adapters";
 
+const DEFAULT_AI_INSIGHTS = {
+  topHighRiskZones: [],
+  emergingHotspots: [],
+  trustWatchlist: [],
+  mismatchReports: [],
+  medicineDemand: [],
+  topMedicinesSold: [],
+  priceAnomalies: [],
+};
+
+const EMPTY_MAP_ENTITIES = {
+  ashaWorkers: [],
+  hospitals: [],
+  medicalTeams: [],
+};
+
 function RoleBadge({ role }) {
   const palette = {
     ADMIN: "bg-emerald-100 text-emerald-800 border-emerald-200",
@@ -252,20 +268,8 @@ export default function WorkspaceClient({ user }) {
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [dashboardAlerts, setDashboardAlerts] = useState([]);
   const [riskZones, setRiskZones] = useState([]);
-  const [aiInsights, setAiInsights] = useState({
-    topHighRiskZones: [],
-    emergingHotspots: [],
-    trustWatchlist: [],
-    mismatchReports: [],
-    medicineDemand: [],
-    topMedicinesSold: [],
-    priceAnomalies: [],
-  });
-  const [mapEntities, setMapEntities] = useState({
-    ashaWorkers: [],
-    hospitals: [],
-    medicalTeams: [],
-  });
+  const [aiInsights, setAiInsights] = useState(() => ({ ...DEFAULT_AI_INSIGHTS }));
+  const [mapEntities, setMapEntities] = useState(() => ({ ...EMPTY_MAP_ENTITIES }));
   const [dailyTrend, setDailyTrend] = useState([]);
   const [diseaseDistribution, setDiseaseDistribution] = useState([]);
   const [isCreatingAsha, setIsCreatingAsha] = useState(false);
@@ -331,26 +335,104 @@ export default function WorkspaceClient({ user }) {
   );
 
   const loadReports = useCallback(
-    async (_activeFilters = { district: "", village: "", disease: "", reporterRole: "" }) => {
+    async (activeFilters = filters) => {
       setIsLoadingReports(true);
 
       try {
-        const data = await backendGet(
-          `/api/v1/cases?location=${encodeURIComponent(userLocationCode)}&limit=200`,
-          {},
-          "Failed to load map data"
-        );
-        const mapped = Array.isArray(data)
-          ? data.map((item) => fromBackendCaseRecord(item, user.location))
-          : [];
-        setReports(mapped);
+        const params = new URLSearchParams({ limit: "200", includeEntities: "true" });
+        const district = (activeFilters.district || "").trim();
+        const village = (activeFilters.village || "").trim();
+        const disease = (activeFilters.disease || "").trim();
+        if (district) params.set("district", district);
+        if (village) params.set("village", village);
+        if (disease) params.set("disease", disease);
+        if (activeFilters.reporterRole) params.set("reporterRole", activeFilters.reporterRole);
+        if (activeFilters.severity) params.set("severity", activeFilters.severity);
+        if (activeFilters.startDate) params.set("startDate", activeFilters.startDate);
+        if (activeFilters.endDate) params.set("endDate", activeFilters.endDate);
+
+        const res = await fetch(`/api/health-data?${params}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const payload = await res.json().catch(() => ({}));
+
+        let healthRows = [];
+        if (res.ok) {
+          healthRows = Array.isArray(payload.data) ? payload.data : [];
+          setReports(healthRows);
+          setDashboardSummary(payload.summary ?? null);
+          setDashboardAlerts(Array.isArray(payload.alerts) ? payload.alerts : []);
+          setRiskZones(Array.isArray(payload.riskZones) ? payload.riskZones : []);
+          setDiseaseDistribution(
+            Array.isArray(payload.diseaseDistribution) ? payload.diseaseDistribution : []
+          );
+          setDailyTrend(Array.isArray(payload.trends?.daily) ? payload.trends.daily : []);
+          setMapEntities({
+            ashaWorkers: payload.entities?.ashaWorkers ?? [],
+            hospitals: payload.entities?.hospitals ?? [],
+            medicalTeams: payload.entities?.medicalTeams ?? [],
+          });
+          setAiInsights(
+            payload.aiInsights && typeof payload.aiInsights === "object"
+              ? { ...DEFAULT_AI_INSIGHTS, ...payload.aiInsights }
+              : { ...DEFAULT_AI_INSIGHTS }
+          );
+        } else {
+          setReports([]);
+          setDashboardSummary(null);
+          setDashboardAlerts([]);
+          setRiskZones([]);
+          setDiseaseDistribution([]);
+          setDailyTrend([]);
+          setAiInsights({ ...DEFAULT_AI_INSIGHTS });
+          setMapEntities({ ...EMPTY_MAP_ENTITIES });
+        }
+
+        let mapped = [];
+        try {
+          const data = await backendGet(
+            `/api/v1/cases?location=${encodeURIComponent(userLocationCode)}&limit=200`,
+            {},
+            "Failed to load map data"
+          );
+          mapped = Array.isArray(data)
+            ? data.map((item) => fromBackendCaseRecord(item, user.location))
+            : [];
+        } catch (ingestError) {
+          if (!res.ok) {
+            toast.error("Data load failed", ingestError.message || "Please refresh and try again.");
+          }
+        }
+
+        if (res.ok && healthRows.length > 0) {
+          if (mapped.length) {
+            setReports((prev) => {
+              const ids = new Set(prev.map((r) => String(r.id)));
+              const extra = mapped.filter((r) => !ids.has(String(r.id)));
+              return extra.length ? [...prev, ...extra] : prev;
+            });
+          }
+          return;
+        }
+
+        if (mapped.length > 0) {
+          setReports(mapped);
+          setDashboardSummary(null);
+          setDashboardAlerts([]);
+          setRiskZones([]);
+          setDiseaseDistribution([]);
+          setDailyTrend([]);
+          setAiInsights({ ...DEFAULT_AI_INSIGHTS });
+          setMapEntities({ ...EMPTY_MAP_ENTITIES });
+        }
       } catch (error) {
         toast.error("Data load failed", error.message || "Please refresh and try again.");
       } finally {
         setIsLoadingReports(false);
       }
     },
-    [toast, user.location, userLocationCode]
+    [toast, user.location, userLocationCode, filters]
   );
 
   const loadPendingUsers = useCallback(async () => {
