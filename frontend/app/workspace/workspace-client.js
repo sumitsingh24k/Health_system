@@ -317,6 +317,7 @@ export default function WorkspaceClient({ user }) {
   const canSubmitReports = user.role === "ASHA" || user.role === "MEDICAL";
   const canSeePendingApprovals = false;
   const canSeeLocationInsight = user.role === "HOSPITAL" || user.role === "MEDICAL";
+  const showBottomDock = !canCreateAsha;
 
   const userLocationCode = useMemo(
     () =>
@@ -461,6 +462,18 @@ export default function WorkspaceClient({ user }) {
       cancelled = true;
     };
   }, [reports, user.location]);
+
+  const scopedReports = useMemo(() => {
+    if (!selectedRegion?.district) return reports;
+    return reports.filter((report) => {
+      const districtMatch =
+        normalizeText(report?.location?.district) === normalizeText(selectedRegion?.district);
+      const villageMatch = selectedRegion?.village
+        ? normalizeText(report?.location?.village) === normalizeText(selectedRegion?.village)
+        : true;
+      return districtMatch && villageMatch;
+    });
+  }, [reports, selectedRegion]);
 
   const summary = useMemo(() => {
     const local = scopedReports.reduce(
