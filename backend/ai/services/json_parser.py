@@ -25,12 +25,17 @@ def _build_fallback(raw_output: str, input_data: dict) -> dict:
     return {
         "location": location,
         "risk_level": "UNKNOWN",
+        "risk_score": 0,
+        "outbreak_probability_next_3_days": 0.0,
         "outbreak_status": "NO OUTBREAK",
         "cases": {
             "current": health_data.get("number_of_cases", 0),
             "predicted_next_week": "N/A",
+            "predicted_next_3_days": "N/A",
         },
         "disease_predictions": [],
+        "medicine_demand_next_3_days": [],
+        "smart_alerts": [],
         "recommended_action": [
             "Manual review recommended - LLM output could not be parsed"
         ],
@@ -54,9 +59,13 @@ def parse_llm_json(raw_output: str, input_data: dict) -> dict:
 
     parsed.setdefault("location", input_data.get("location", {}))
     parsed.setdefault("risk_level", "UNKNOWN")
+    parsed.setdefault("risk_score", 0)
+    parsed.setdefault("outbreak_probability_next_3_days", 0.0)
     parsed.setdefault("outbreak_status", "UNKNOWN")
     parsed.setdefault("cases", {})
     parsed.setdefault("disease_predictions", [])
+    parsed.setdefault("medicine_demand_next_3_days", [])
+    parsed.setdefault("smart_alerts", [])
     parsed.setdefault("recommended_action", [])
     parsed.setdefault("confidence_score", 0.0)
 

@@ -115,6 +115,116 @@ function formatDistance(distanceKm) {
   return distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m away` : `${distanceKm.toFixed(1)} km away`;
 }
 
+function parseMedicineSalesText(input) {
+  if (!input || typeof input !== "string") return [];
+
+  return input
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [medicineRaw, unitsRaw, priceRaw, benchmarkRaw] = line.split(",").map((item) => item.trim());
+      const unitsSold = Number(unitsRaw);
+      const unitPrice = Number(priceRaw);
+      const benchmarkPrice =
+        benchmarkRaw === undefined || benchmarkRaw === "" ? null : Number(benchmarkRaw);
+
+      if (!medicineRaw || !Number.isFinite(unitsSold) || unitsSold < 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        return null;
+      }
+
+      return {
+        medicine: medicineRaw,
+        unitsSold: Math.round(unitsSold),
+        unitPrice: Number(unitPrice.toFixed(2)),
+        benchmarkPrice:
+          benchmarkPrice === null || !Number.isFinite(benchmarkPrice) || benchmarkPrice < 0
+            ? null
+            : Number(benchmarkPrice.toFixed(2)),
+      };
+    })
+    .filter(Boolean);
+}
+
+function AdminSidebar({ pendingCount, alertCount, mismatchCount, priceFlags }) {
+  const links = [
+    { href: "#admin-create-asha", label: "Create ASHA" },
+    { href: "#admin-filters", label: "Filters" },
+    { href: "#admin-memory", label: "ASHA Memory" },
+    { href: "#admin-approvals", label: "Approvals" },
+    { href: "#outbreak-map", label: "Map" },
+  ];
+
+  return (
+    <aside className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-6 xl:h-fit">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Admin Sidebar</p>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-1">
+        {links.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+
+      <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+        <p className="text-xs text-slate-500">Pending approvals</p>
+        <p className="text-lg font-bold text-slate-900">{pendingCount}</p>
+        <p className="mt-2 text-xs text-slate-500">Critical alerts</p>
+        <p className="text-lg font-bold text-rose-600">{alertCount}</p>
+        <p className="mt-2 text-xs text-slate-500">Data mismatches</p>
+        <p className="text-lg font-bold text-amber-600">{mismatchCount}</p>
+        <p className="mt-2 text-xs text-slate-500">Price anomaly flags</p>
+        <p className="text-lg font-bold text-violet-700">{priceFlags}</p>
+      </div>
+    </aside>
+  );
+}
+
+function BottomRoleDock({ role, canSubmitReports, canSeeLocationInsight, canSeeAiPanel }) {
+  const links = [
+    { href: "#outbreak-map", label: "Map" },
+    { href: "#recent-reports", label: "Reports" },
+  ];
+
+  if (canSubmitReports) {
+    links.unshift({ href: "#field-report", label: "Submit" });
+  }
+
+  if (canSeeLocationInsight) {
+    links.push({ href: "#role-insight", label: "Insight" });
+  }
+
+  if (canSeeAiPanel) {
+    links.push({ href: "#ai-decision-panel", label: "AI Panel" });
+  }
+
+  const gridClass =
+    links.length <= 2 ? "grid-cols-2" : links.length === 3 ? "grid-cols-3" : "grid-cols-4";
+
+  return (
+    <nav className="fixed bottom-3 left-1/2 z-50 w-[calc(100%-1rem)] max-w-md -translate-x-1/2 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-xl backdrop-blur md:hidden">
+      <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+        {role} Dashboard
+      </p>
+      <div className={`grid gap-1 ${gridClass}`}>
+        {links.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="rounded-lg px-2 py-2 text-center text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
 export default function WorkspaceClient({ user }) {
   const { toast } = useToast();
   const didBootstrapRef = useRef(false);
@@ -127,7 +237,30 @@ export default function WorkspaceClient({ user }) {
     village: "",
     disease: "",
     reporterRole: "",
+    severity: "",
+    startDate: "",
+    endDate: "",
   });
+  const [selectedRegion, setSelectedRegion] = useState(null);
+  const [dashboardSummary, setDashboardSummary] = useState(null);
+  const [dashboardAlerts, setDashboardAlerts] = useState([]);
+  const [riskZones, setRiskZones] = useState([]);
+  const [aiInsights, setAiInsights] = useState({
+    topHighRiskZones: [],
+    emergingHotspots: [],
+    trustWatchlist: [],
+    mismatchReports: [],
+    medicineDemand: [],
+    topMedicinesSold: [],
+    priceAnomalies: [],
+  });
+  const [mapEntities, setMapEntities] = useState({
+    ashaWorkers: [],
+    hospitals: [],
+    medicalTeams: [],
+  });
+  const [dailyTrend, setDailyTrend] = useState([]);
+  const [diseaseDistribution, setDiseaseDistribution] = useState([]);
   const [isCreatingAsha, setIsCreatingAsha] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const [approvingUserId, setApprovingUserId] = useState("");
@@ -145,6 +278,7 @@ export default function WorkspaceClient({ user }) {
     householdsVisited: "",
     newCases: "",
     criticalCases: "",
+    medicineSalesText: "",
     notes: "",
     latitude: user?.location?.latitude?.toString() || "",
     longitude: user?.location?.longitude?.toString() || "",
@@ -173,17 +307,31 @@ export default function WorkspaceClient({ user }) {
   const canSubmitReports = user.role === "ASHA" || user.role === "MEDICAL";
   const canSeePendingApprovals = user.role === "ADMIN";
   const canSeeLocationInsight = user.role === "HOSPITAL" || user.role === "MEDICAL";
+  const showBottomDock = !canCreateAsha;
 
   const loadReports = useCallback(
-    async (activeFilters = { district: "", village: "", disease: "", reporterRole: "" }) => {
+    async (
+      activeFilters = {
+        district: "",
+        village: "",
+        disease: "",
+        reporterRole: "",
+        severity: "",
+        startDate: "",
+        endDate: "",
+      }
+    ) => {
       setIsLoadingReports(true);
 
       try {
-        const params = new URLSearchParams({ limit: "200" });
+        const params = new URLSearchParams({ limit: "200", includeEntities: "true" });
+        if (activeFilters.disease) params.set("disease", activeFilters.disease);
+        if (activeFilters.severity) params.set("severity", activeFilters.severity);
+        if (activeFilters.startDate) params.set("startDate", activeFilters.startDate);
+        if (activeFilters.endDate) params.set("endDate", activeFilters.endDate);
         if (user.role === "ADMIN") {
           if (activeFilters.district) params.set("district", activeFilters.district);
           if (activeFilters.village) params.set("village", activeFilters.village);
-          if (activeFilters.disease) params.set("disease", activeFilters.disease);
           if (activeFilters.reporterRole) params.set("reporterRole", activeFilters.reporterRole);
         }
 
@@ -198,6 +346,45 @@ export default function WorkspaceClient({ user }) {
         }
 
         setReports(Array.isArray(payload?.data) ? payload.data : []);
+        setDashboardSummary(payload?.summary || null);
+        setDashboardAlerts(Array.isArray(payload?.alerts) ? payload.alerts : []);
+        setRiskZones(Array.isArray(payload?.riskZones) ? payload.riskZones : []);
+        setMapEntities({
+          ashaWorkers: Array.isArray(payload?.entities?.ashaWorkers)
+            ? payload.entities.ashaWorkers
+            : [],
+          hospitals: Array.isArray(payload?.entities?.hospitals) ? payload.entities.hospitals : [],
+          medicalTeams: Array.isArray(payload?.entities?.medicalTeams)
+            ? payload.entities.medicalTeams
+            : [],
+        });
+        setDailyTrend(Array.isArray(payload?.trends?.daily) ? payload.trends.daily : []);
+        setDiseaseDistribution(
+          Array.isArray(payload?.diseaseDistribution) ? payload.diseaseDistribution : []
+        );
+        setAiInsights({
+          topHighRiskZones: Array.isArray(payload?.aiInsights?.topHighRiskZones)
+            ? payload.aiInsights.topHighRiskZones
+            : [],
+          emergingHotspots: Array.isArray(payload?.aiInsights?.emergingHotspots)
+            ? payload.aiInsights.emergingHotspots
+            : [],
+          trustWatchlist: Array.isArray(payload?.aiInsights?.trustWatchlist)
+            ? payload.aiInsights.trustWatchlist
+            : [],
+          mismatchReports: Array.isArray(payload?.aiInsights?.mismatchReports)
+            ? payload.aiInsights.mismatchReports
+            : [],
+          medicineDemand: Array.isArray(payload?.aiInsights?.medicineDemand)
+            ? payload.aiInsights.medicineDemand
+            : [],
+          topMedicinesSold: Array.isArray(payload?.aiInsights?.topMedicinesSold)
+            ? payload.aiInsights.topMedicinesSold
+            : [],
+          priceAnomalies: Array.isArray(payload?.aiInsights?.priceAnomalies)
+            ? payload.aiInsights.priceAnomalies
+            : [],
+        });
       } catch (error) {
         toast.error("Data load failed", error.message || "Please refresh and try again.");
       } finally {
@@ -295,6 +482,9 @@ export default function WorkspaceClient({ user }) {
       village: "",
       disease: "",
       reporterRole: "",
+      severity: "",
+      startDate: "",
+      endDate: "",
     });
 
     if (canSeePendingApprovals) {
@@ -306,8 +496,23 @@ export default function WorkspaceClient({ user }) {
     }
   }, [canCreateAsha, canSeePendingApprovals, loadAshaDirectory, loadPendingUsers, loadReports]);
 
+  const scopedReports = useMemo(() => {
+    if (!selectedRegion?.district) {
+      return reports;
+    }
+
+    return reports.filter((item) => {
+      const districtMatch =
+        normalizeText(item?.location?.district) === normalizeText(selectedRegion?.district);
+      const villageMatch = selectedRegion?.village
+        ? normalizeText(item?.location?.village) === normalizeText(selectedRegion?.village)
+        : true;
+      return districtMatch && villageMatch;
+    });
+  }, [reports, selectedRegion]);
+
   const summary = useMemo(() => {
-    return reports.reduce(
+    const local = scopedReports.reduce(
       (acc, item) => {
         acc.newCases += item.newCases || 0;
         acc.criticalCases += item.criticalCases || 0;
@@ -315,10 +520,47 @@ export default function WorkspaceClient({ user }) {
       },
       { newCases: 0, criticalCases: 0 }
     );
-  }, [reports]);
+
+    return {
+      newCases: selectedRegion?.district
+        ? local.newCases
+        : Number.isFinite(dashboardSummary?.totalNewCases)
+          ? dashboardSummary.totalNewCases
+          : local.newCases,
+      criticalCases: selectedRegion?.district
+        ? local.criticalCases
+        : Number.isFinite(dashboardSummary?.totalCriticalCases)
+          ? dashboardSummary.totalCriticalCases
+          : local.criticalCases,
+      activeCases: Number.isFinite(dashboardSummary?.activeCases) ? dashboardSummary.activeCases : local.newCases,
+      criticalAlerts: Number.isFinite(dashboardSummary?.criticalAlerts)
+        ? dashboardSummary.criticalAlerts
+        : riskZones.filter((zone) => zone?.riskLevel === "HIGH_RISK").length,
+      predictiveIncreasePercent: Number.isFinite(dashboardSummary?.predictiveIncreasePercent)
+        ? dashboardSummary.predictiveIncreasePercent
+        : 0,
+      outbreakProbabilityNext3Days: Number.isFinite(dashboardSummary?.outbreakProbabilityNext3Days)
+        ? dashboardSummary.outbreakProbabilityNext3Days
+        : 0,
+      expectedPatientsNext2Days: Number.isFinite(dashboardSummary?.expectedPatientsNext2Days)
+        ? dashboardSummary.expectedPatientsNext2Days
+        : Math.round(local.newCases * 0.25),
+      hospitalLoadPercent: Number.isFinite(dashboardSummary?.hospitalLoadPercent)
+        ? dashboardSummary.hospitalLoadPercent
+        : Math.min(100, Math.round(local.newCases / 2)),
+    };
+  }, [dashboardSummary, riskZones, scopedReports, selectedRegion]);
 
   const diseaseInsights = useMemo(() => {
-    const buckets = reports.reduce((acc, item) => {
+    if (diseaseDistribution.length) {
+      return diseaseDistribution.map((item) => ({
+        disease: item.disease,
+        reports: item.reports,
+        cases: item.newCases,
+      }));
+    }
+
+    const buckets = scopedReports.reduce((acc, item) => {
       const key = item.disease || "UNKNOWN";
       const current = acc.get(key) || { disease: key, reports: 0, cases: 0 };
       current.reports += 1;
@@ -328,7 +570,7 @@ export default function WorkspaceClient({ user }) {
     }, new Map());
 
     return [...buckets.values()].sort((a, b) => b.cases - a.cases).slice(0, 5);
-  }, [reports]);
+  }, [diseaseDistribution, scopedReports]);
 
   const ashaSpotlight = useMemo(() => {
     const topMatches =
@@ -337,6 +579,60 @@ export default function WorkspaceClient({ user }) {
         : ashaDirectory.data;
     return topMatches.slice(0, 12);
   }, [ashaDirectory]);
+
+  const selectedZoneInsight = useMemo(() => {
+    if (!selectedRegion?.district) return null;
+
+    return (
+      riskZones.find((zone) => {
+        const districtMatch = normalizeText(zone?.district) === normalizeText(selectedRegion?.district);
+        const villageMatch = selectedRegion?.village
+          ? normalizeText(zone?.village) === normalizeText(selectedRegion?.village)
+          : true;
+        return districtMatch && villageMatch;
+      }) || null
+    );
+  }, [riskZones, selectedRegion]);
+
+  const selectedAreaDemand = useMemo(() => {
+    if (!selectedRegion?.district) return [];
+
+    return aiInsights.medicineDemand
+      .filter((item) => {
+        const districtMatch = normalizeText(item?.district) === normalizeText(selectedRegion?.district);
+        const villageMatch = selectedRegion?.village
+          ? normalizeText(item?.village) === normalizeText(selectedRegion?.village)
+          : true;
+        return districtMatch && villageMatch;
+      })
+      .slice(0, 5);
+  }, [aiInsights.medicineDemand, selectedRegion]);
+
+  const selectedAreaPriceAnomalies = useMemo(() => {
+    if (!selectedRegion?.district) return [];
+
+    return aiInsights.priceAnomalies
+      .filter((item) => {
+        const districtMatch = normalizeText(item?.district) === normalizeText(selectedRegion?.district);
+        const villageMatch = selectedRegion?.village
+          ? normalizeText(item?.village) === normalizeText(selectedRegion?.village)
+          : true;
+        return districtMatch && villageMatch;
+      })
+      .slice(0, 6);
+  }, [aiInsights.priceAnomalies, selectedRegion]);
+
+  const nearbyZoneRisk = useMemo(() => {
+    if (!selectedRegion?.district) return [];
+
+    return riskZones
+      .filter((zone) => {
+        if (!selectedZoneInsight || zone.id === selectedZoneInsight.id) return false;
+        return normalizeText(zone?.district) === normalizeText(selectedRegion?.district);
+      })
+      .sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))
+      .slice(0, 3);
+  }, [riskZones, selectedRegion, selectedZoneInsight]);
 
   async function handleCopyAshaId(workerId) {
     if (!workerId) return;
@@ -443,6 +739,15 @@ export default function WorkspaceClient({ user }) {
     setIsSubmittingReport(true);
 
     try {
+      const medicineSales =
+        user.role === "MEDICAL" ? parseMedicineSalesText(reportForm.medicineSalesText) : [];
+
+      if (user.role === "MEDICAL" && reportForm.medicineSalesText.trim() && !medicineSales.length) {
+        throw new Error(
+          "Medicine format invalid. Use: Medicine,Units,PrivatePrice,JanaushadhiPrice (one per line)."
+        );
+      }
+
       const response = await fetch("/api/health-data", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -451,6 +756,7 @@ export default function WorkspaceClient({ user }) {
           householdsVisited: reportForm.householdsVisited,
           newCases: reportForm.newCases,
           criticalCases: reportForm.criticalCases,
+          medicineSales,
           notes: reportForm.notes,
           latitude: reportForm.latitude,
           longitude: reportForm.longitude,
@@ -469,6 +775,7 @@ export default function WorkspaceClient({ user }) {
         householdsVisited: "",
         newCases: "",
         criticalCases: "",
+        medicineSalesText: "",
         notes: "",
       }));
       loadReports(filters);
@@ -502,7 +809,9 @@ export default function WorkspaceClient({ user }) {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#e0f2fe_0%,#f8fafc_35%,#f1f5f9_100%)] px-4 py-6 md:px-6 md:py-8">
+    <main
+      className={`min-h-screen bg-[radial-gradient(circle_at_top,#e0f2fe_0%,#f8fafc_35%,#f1f5f9_100%)] px-4 py-6 md:px-6 md:py-8 ${showBottomDock ? "pb-24 md:pb-8" : ""}`}
+    >
       <div className="mx-auto max-w-7xl space-y-6">
         <section className="rounded-3xl border border-white/70 bg-white/80 p-5 shadow-xl backdrop-blur md:p-7">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -532,16 +841,277 @@ export default function WorkspaceClient({ user }) {
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatCard label="Reports" value={reports.length} />
+            <StatCard label="Reports" value={scopedReports.length} />
             <StatCard label="Total New Cases" value={summary.newCases} />
             <StatCard label="Critical Cases" value={summary.criticalCases} />
-            <StatCard label="Diseases Tracked" value={new Set(reports.map((r) => r.disease)).size} />
+            <StatCard label="Active Cases" value={summary.activeCases} />
           </div>
         </section>
 
+        <section id="admin-filters" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-lg font-bold text-slate-900">Outbreak Insights & Filters</h2>
+            {selectedRegion?.district ? (
+              <button
+                type="button"
+                onClick={() => setSelectedRegion(null)}
+                className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700"
+              >
+                Focus: {selectedRegion.village ? `${selectedRegion.village}, ` : ""}
+                {selectedRegion.district} (Clear)
+              </button>
+            ) : null}
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <input
+              placeholder="Disease"
+              value={filters.disease}
+              onChange={(event) => setFilters((current) => ({ ...current, disease: event.target.value }))}
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+            />
+            <select
+              value={filters.severity}
+              onChange={(event) => setFilters((current) => ({ ...current, severity: event.target.value }))}
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+            >
+              <option value="">All Severity</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(event) => setFilters((current) => ({ ...current, startDate: event.target.value }))}
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+            />
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(event) => setFilters((current) => ({ ...current, endDate: event.target.value }))}
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+            />
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => loadReports(filters)}
+              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
+            >
+              Apply Insights
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const defaults = {
+                  district: "",
+                  village: "",
+                  disease: "",
+                  reporterRole: "",
+                  severity: "",
+                  startDate: "",
+                  endDate: "",
+                };
+                setFilters(defaults);
+                setSelectedRegion(null);
+                loadReports(defaults);
+              }}
+              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current Risk</p>
+              <p className="mt-1 text-xl font-bold text-rose-600">{summary.criticalAlerts} High Risk Areas</p>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Next 2-3 Days</p>
+              <p className="mt-1 text-xl font-bold text-amber-600">
+                {summary.predictiveIncreasePercent > 0 ? "+" : ""}
+                {summary.predictiveIncreasePercent}% predicted change
+              </p>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supply Pressure</p>
+              <p className="mt-1 text-xl font-bold text-sky-700">{summary.hospitalLoadPercent}% load index</p>
+            </article>
+          </div>
+
+          {dashboardAlerts.length ? (
+            <div className="mt-4 grid gap-2 md:grid-cols-3">
+              {dashboardAlerts.slice(0, 3).map((alert, index) => (
+                <article
+                  key={`${alert.title || alert.type || "alert"}-${index}`}
+                  className="rounded-2xl border border-slate-200 bg-white p-3"
+                >
+                  <p className="text-sm font-semibold text-slate-900">{alert.title || "Alert"}</p>
+                  <p className="mt-1 text-xs text-slate-600">{alert.description || "Location alert available."}</p>
+                </article>
+              ))}
+            </div>
+          ) : null}
+
+          {selectedRegion?.district ? (
+            <section
+              id="ai-decision-panel"
+              className="mt-4 space-y-3 rounded-2xl border border-sky-200 bg-sky-50/40 p-4"
+            >
+              <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <h3 className="text-sm font-bold uppercase tracking-[0.16em] text-sky-700">
+                  AI Decision Panel
+                </h3>
+                <p className="text-xs text-slate-600">
+                  {selectedRegion?.village ? `${selectedRegion.village}, ` : ""}
+                  {selectedRegion?.district}
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-4">
+                <article className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Risk Score</p>
+                  <p className="mt-1 text-xl font-bold text-rose-600">
+                    {Number.isFinite(selectedZoneInsight?.riskScore) ? selectedZoneInsight.riskScore : "--"}
+                  </p>
+                </article>
+                <article className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Outbreak Probability
+                  </p>
+                  <p className="mt-1 text-xl font-bold text-amber-600">
+                    {Number.isFinite(selectedZoneInsight?.outbreakProbabilityNext3Days)
+                      ? `${Math.round(selectedZoneInsight.outbreakProbabilityNext3Days * 100)}%`
+                      : "--"}
+                  </p>
+                </article>
+                <article className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Predicted Extra Cases
+                  </p>
+                  <p className="mt-1 text-xl font-bold text-sky-700">
+                    {Number.isFinite(selectedZoneInsight?.predictedAdditionalCases3d)
+                      ? selectedZoneInsight.predictedAdditionalCases3d
+                      : "--"}
+                  </p>
+                </article>
+                <article className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Hospital Prep
+                  </p>
+                  <p className="mt-1 text-xl font-bold text-violet-700">{summary.expectedPatientsNext2Days}</p>
+                </article>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <article className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Medicine Demand (Next 3 Days)
+                  </p>
+                  {selectedAreaDemand.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">No medical sales data captured yet for this area.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {selectedAreaDemand.map((item, index) => (
+                        <div key={`${item.medicine}-${index}`} className="flex items-center justify-between text-sm">
+                          <span className="font-medium text-slate-800">{item.medicine}</span>
+                          <span className="font-bold text-emerald-700">{item.expectedUnitsNext3Days} units</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+
+                <article className="rounded-xl border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Price Comparison & Overpricing
+                  </p>
+                  {selectedAreaPriceAnomalies.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">No overpricing flagged for selected area.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {selectedAreaPriceAnomalies.map((item, index) => (
+                        <div
+                          key={`${item.reportId || index}-${item.medicine}`}
+                          className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs"
+                        >
+                          <p className="font-semibold text-rose-700">
+                            {item.medicine} - {item.workerId}
+                          </p>
+                          <p className="text-slate-600">
+                            Private: ₹{item.privatePrice} | Janaushadhi: ₹
+                            {item.janaushadhiReference || item.averageAreaPrice}
+                          </p>
+                          <p className="font-medium text-rose-700">Overpriced by {item.overByPercent}%</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </article>
+              </div>
+
+              <div className="grid gap-2 md:grid-cols-3">
+                <article className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                  <p className="font-semibold text-slate-900">Supply Action</p>
+                  <p className="mt-1">
+                    {selectedAreaDemand[0]
+                      ? `Send ${selectedAreaDemand[0].expectedUnitsNext3Days} units of ${selectedAreaDemand[0].medicine}.`
+                      : "Collect medical inventory for precise dispatch."}
+                  </p>
+                </article>
+                <article className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                  <p className="font-semibold text-slate-900">Spread Watch</p>
+                  <p className="mt-1">
+                    {nearbyZoneRisk.length
+                      ? `${nearbyZoneRisk[0].village} nearby has risk score ${nearbyZoneRisk[0].riskScore}.`
+                      : "No nearby high-risk area in same district right now."}
+                  </p>
+                </article>
+                <article className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+                  <p className="font-semibold text-slate-900">Data Integrity</p>
+                  <p className="mt-1">
+                    {aiInsights.mismatchReports.length
+                      ? `${aiInsights.mismatchReports.length} high mismatch reports need review.`
+                      : "No major ASHA-MEDICAL mismatch detected."}
+                  </p>
+                </article>
+              </div>
+            </section>
+          ) : null}
+
+          {dailyTrend.length ? (
+            <div className="mt-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Daily Trend</p>
+              <div className="mt-2 flex items-end gap-1.5">
+                {dailyTrend.slice(-10).map((point) => {
+                  const highest = Math.max(...dailyTrend.map((item) => item.newCases || 0), 1);
+                  const height = Math.max(8, Math.round(((point.newCases || 0) / highest) * 75));
+                  return (
+                    <div key={point.date} className="flex flex-1 flex-col items-center gap-1">
+                      <div className="h-[6px] w-full rounded-t bg-sky-500" style={{ height }} />
+                      <span className="text-[10px] text-slate-500">{point.newCases || 0}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         {canCreateAsha ? (
-          <>
-            <section className="grid gap-5 lg:grid-cols-2">
+          <section className="grid gap-6 xl:grid-cols-[250px_minmax(0,1fr)]">
+            <AdminSidebar
+              pendingCount={pendingUsers.length}
+              alertCount={summary.criticalAlerts}
+              mismatchCount={aiInsights.mismatchReports.length}
+              priceFlags={aiInsights.priceAnomalies.length}
+            />
+
+            <div className="space-y-6">
+              <section id="admin-create-asha" className="grid gap-5 lg:grid-cols-2">
               <form
                 onSubmit={handleCreateAsha}
                 className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
@@ -661,7 +1231,10 @@ export default function WorkspaceClient({ user }) {
               </section>
             </section>
 
-            <section className="rounded-3xl border border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff_0%,#ffffff_45%,#f0f9ff_100%)] p-5 shadow-sm md:p-6">
+            <section
+              id="admin-memory"
+              className="rounded-3xl border border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff_0%,#ffffff_45%,#f0f9ff_100%)] p-5 shadow-sm md:p-6"
+            >
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-cyan-700">
@@ -817,12 +1390,13 @@ export default function WorkspaceClient({ user }) {
                   );
                 })}
               </div>
-            </section>
-          </>
+              </section>
+            </div>
+          </section>
         ) : null}
 
         {canSeePendingApprovals ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <section id="admin-approvals" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-900">Pending Hospital/Medical Approvals</h2>
               <button
@@ -872,7 +1446,7 @@ export default function WorkspaceClient({ user }) {
         ) : null}
 
         {canSubmitReports ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <section id="field-report" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
             <h2 className="mb-1 text-lg font-bold text-slate-900">{user.role} Field Report</h2>
             <p className="mb-3 text-sm text-slate-600">
               Submit multilingual disease updates with voice or typing. Report is plotted on the map
@@ -953,6 +1527,17 @@ export default function WorkspaceClient({ user }) {
                 required
               />
 
+              {user.role === "MEDICAL" ? (
+                <textarea
+                  placeholder="Medicine Sales (one per line): Paracetamol,120,12,8"
+                  value={reportForm.medicineSalesText}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, medicineSalesText: event.target.value }))
+                  }
+                  className="min-h-[90px] rounded-xl border border-emerald-300 bg-emerald-50/40 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring md:col-span-2"
+                />
+              ) : null}
+
               <MultilingualVoiceInput
                 title="Whisper Notes"
                 description="Speak field notes in any selected language"
@@ -995,7 +1580,7 @@ export default function WorkspaceClient({ user }) {
         ) : null}
 
         {canSeeLocationInsight ? (
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <section id="role-insight" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
             <h2 className="mb-3 text-lg font-bold text-slate-900">Location Insight</h2>
             <div className="grid gap-3 md:grid-cols-3">
               {diseaseInsights.length === 0 ? (
@@ -1015,20 +1600,28 @@ export default function WorkspaceClient({ user }) {
           </section>
         ) : null}
 
-        <section className="space-y-3">
+        <section id="outbreak-map" className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-slate-900">Outbreak Map</h2>
             <p className="inline-flex items-center gap-1 text-sm text-slate-600">
               <Clock3 size={14} />
-              {isLoadingReports ? "Loading reports..." : `${reports.length} plotted reports`}
+              {isLoadingReports ? "Loading reports..." : `${scopedReports.length} visible reports`}
             </p>
           </div>
-          <HealthMap reports={reports} />
+          <HealthMap
+            reports={reports}
+            entities={mapEntities}
+            riskZones={riskZones}
+            role={user.role}
+            userLocation={user.location || null}
+            selectedRegion={selectedRegion}
+            onRegionSelect={setSelectedRegion}
+          />
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <section id="recent-reports" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           <h2 className="mb-3 text-lg font-bold text-slate-900">Recent Reports</h2>
-          {reports.length === 0 ? (
+          {scopedReports.length === 0 ? (
             <p className="text-sm text-slate-500">No reports available yet.</p>
           ) : (
             <div className="overflow-x-auto">
@@ -1045,7 +1638,7 @@ export default function WorkspaceClient({ user }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.slice(0, 15).map((report) => (
+                  {scopedReports.slice(0, 15).map((report) => (
                     <tr key={report.id} className="border-b border-slate-100 text-slate-700">
                       <td className="px-3 py-2">{report.reporterRole || "ASHA"}</td>
                       <td className="px-3 py-2 font-medium text-slate-900">{report.disease}</td>
@@ -1066,6 +1659,15 @@ export default function WorkspaceClient({ user }) {
           )}
         </section>
       </div>
+
+      {showBottomDock ? (
+        <BottomRoleDock
+          role={user.role}
+          canSubmitReports={canSubmitReports}
+          canSeeLocationInsight={canSeeLocationInsight}
+          canSeeAiPanel={Boolean(selectedRegion?.district)}
+        />
+      ) : null}
     </main>
   );
 }

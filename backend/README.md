@@ -15,10 +15,13 @@ All API routes are served by a single application (`app.main:app`) under `/api/v
 3. Configure environment variables (optional unless overriding defaults):
    - `MONGODB_URI` (default: `mongodb://localhost:27017`)
    - `MONGODB_DB` (default: `health_system`)
+   - `LLM_PROVIDER` (`gemini` or `ollama`, default: `ollama`)
+   - `GEMINI_API_KEY` (required if `LLM_PROVIDER=gemini`)
+   - `GEMINI_MODEL` (default: `gemini-2.5-flash`)
    - `OLLAMA_URL` (default: `http://localhost:11434/api/generate`)
    - `OLLAMA_MODEL` (default: `llama3.1:8b`)
    - `OLLAMA_TIMEOUT_SECONDS` (default: `120`)
-4. Start Ollama and make sure the model is available:
+4. If using Ollama, start Ollama and make sure the model is available:
    - `ollama serve`
    - `ollama pull llama3.1:8b`
 5. Start the API:
