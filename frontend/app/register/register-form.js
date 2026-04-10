@@ -104,7 +104,7 @@ export default function RegisterForm({ title, roleLabel }) {
         <p className="text-center text-sm text-slate-600">
           Already approved?{" "}
           <Link href="/login" className="font-semibold text-emerald-700 hover:text-emerald-600">
-            Login here
+            Sign in
           </Link>
         </p>
       </form>

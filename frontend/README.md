@@ -2,6 +2,8 @@
 
 Next.js dashboard and role-based UI for Health System.
 
+**Full-stack map (Next.js vs Python, Mongo collections, every API):** see [`../SYSTEM_ARCHITECTURE.md`](../SYSTEM_ARCHITECTURE.md).
+
 ## Environment
 
 Set these values in `.env`:

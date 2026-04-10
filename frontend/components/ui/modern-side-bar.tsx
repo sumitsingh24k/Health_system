@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutFromApp } from "@/app/lib/auth/client-sign-out";
 import {
   Home,
   User,
@@ -44,7 +44,6 @@ function navigationForUser(role: string | undefined | null): NavigationItem[] {
   if (!role) {
     return [
       { id: "portal", name: "Portal home", icon: Home, href: "/" },
-      { id: "login", name: "Login", icon: User, href: "/login" },
       {
         id: "medical",
         name: "Medical register",
@@ -321,23 +320,23 @@ export function Sidebar({ className = "", children, user }: SidebarProps) {
             {user ? (
               <button
                 type="button"
-                onClick={() => signOut({ callbackUrl: "/login" })}
+                onClick={() => signOutFromApp()}
                 className={`
                   group relative flex w-full items-center rounded-md text-left transition-all duration-200
                   text-red-600 hover:bg-red-50 hover:text-red-700
                   ${isCollapsed ? "justify-center p-2.5" : "space-x-2.5 px-3 py-2.5"}
                 `}
-                title={isCollapsed ? "Logout" : undefined}
+                title={isCollapsed ? "Sign out" : undefined}
               >
                 <div className="flex min-w-[24px] items-center justify-center">
                   <LogOut className="h-4 w-4 shrink-0 text-red-500 group-hover:text-red-600" />
                 </div>
 
-                {!isCollapsed && <span className="text-sm">Logout</span>}
+                {!isCollapsed && <span className="text-sm">Sign out</span>}
 
                 {isCollapsed && (
                   <div className="invisible absolute left-full z-50 ml-2 rounded bg-slate-800 px-2 py-1 text-xs whitespace-nowrap text-white opacity-0 transition-all duration-200 group-hover:visible group-hover:opacity-100">
-                    Logout
+                    Sign out
                     <div className="absolute top-1/2 left-0 h-1.5 w-1.5 -translate-x-1 -translate-y-1/2 rotate-45 bg-slate-800" />
                   </div>
                 )}

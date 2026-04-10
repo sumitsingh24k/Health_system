@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { signOut } from "next-auth/react";
+import { signOutFromApp } from "@/app/lib/auth/client-sign-out";
 import {
   Activity,
   Building2,
@@ -820,7 +820,7 @@ export default function WorkspaceClient({ user }) {
               <RoleIntro role={user.role} />
             </div>
 
-            <Button type="button" variant="secondary" size="md" onClick={() => signOut({ callbackUrl: "/" })}>
+            <Button type="button" variant="secondary" size="md" onClick={() => signOutFromApp()}>
               <LogOut size={16} />
               Sign out
             </Button>

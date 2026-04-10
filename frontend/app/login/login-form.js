@@ -49,12 +49,9 @@ export default function LoginForm({ callbackUrl = "/" }) {
         <p className="mb-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-700">
           SECURE ACCESS
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
-          Health System Login
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Sign in with your approved account credentials.
-        </p>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Sign in</h1>
+        <p className="mt-1 text-sm font-medium text-slate-700">Health System</p>
+        <p className="mt-2 text-sm text-slate-600">Use your approved account credentials.</p>
       </div>
 
       <label className="block space-y-1">

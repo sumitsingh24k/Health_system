@@ -8,7 +8,7 @@ const portalCards = [
     title: "ASHA Worker",
     description: "Submit field reports and keep village-level surveillance active.",
     href: "/login",
-    action: "ASHA Login",
+    action: "ASHA sign in",
     icon: UserCheck,
   },
   {
@@ -29,7 +29,7 @@ const portalCards = [
     title: "Admin",
     description: "Access workspace controls and supervise outbreak operations.",
     href: "/login?callbackUrl=/admin",
-    action: "Admin Login",
+    action: "Admin sign in",
     icon: ShieldCheck,
   },
 ];
@@ -50,7 +50,7 @@ export default function HomePage() {
               <Link href="/workspace">Open Workspace</Link>
             </Button>
             <Button asChild>
-              <Link href="/login">Login</Link>
+              <Link href="/login">Sign in</Link>
             </Button>
           </div>
         </div>
