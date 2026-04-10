@@ -21,13 +21,20 @@ import HealthMap from "@/app/components/maps/health-map";
 import { useToast } from "@/app/components/toast-provider";
 import AreaSearchFields from "@/app/components/location/area-search-fields";
 import MultilingualVoiceInput from "@/app/components/voice/multilingual-voice-input";
-import { readApiPayload, resolveApiError } from "@/app/lib/fetch-utils";
+import Button from "@/app/components/ui/button";
+import { backendGet, backendPost } from "@/app/lib/api-client";
+import {
+  fromBackendCaseRecord,
+  toBackendCasePayload,
+  toPincodeLikeCode,
+  toPredictionPayload,
+} from "@/app/lib/backend-adapters";
 
 function RoleBadge({ role }) {
   const palette = {
-    ADMIN: "bg-amber-100 text-amber-800 border-amber-200",
-    ASHA: "bg-rose-100 text-rose-800 border-rose-200",
-    HOSPITAL: "bg-sky-100 text-sky-800 border-sky-200",
+    ADMIN: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    ASHA: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    HOSPITAL: "bg-emerald-100 text-emerald-800 border-emerald-200",
     MEDICAL: "bg-emerald-100 text-emerald-800 border-emerald-200",
   };
 
@@ -65,17 +72,17 @@ function RoleIntro({ role }) {
     ADMIN: {
       icon: ShieldCheck,
       text: "Create ASHA workers, approve registrations, and analyze any location outbreak.",
-      color: "text-amber-700",
+      color: "text-emerald-700",
     },
     ASHA: {
       icon: UserCheck,
       text: "Submit ground reports for your assigned area with disease and GPS details.",
-      color: "text-rose-700",
+      color: "text-emerald-700",
     },
     HOSPITAL: {
       icon: Building2,
       text: "Monitor and validate area-wise reports for treatment readiness.",
-      color: "text-sky-700",
+      color: "text-emerald-700",
     },
     MEDICAL: {
       icon: Stethoscope,
@@ -168,43 +175,47 @@ export default function WorkspaceClient({ user }) {
     },
   });
   const [isLoadingAshaDirectory, setIsLoadingAshaDirectory] = useState(false);
+  const [prediction, setPrediction] = useState(null);
+  const [predictionError, setPredictionError] = useState("");
+  const [isLoadingPrediction, setIsLoadingPrediction] = useState(false);
 
-  const canCreateAsha = user.role === "ADMIN";
+  const canCreateAsha = false;
   const canSubmitReports = user.role === "ASHA" || user.role === "MEDICAL";
-  const canSeePendingApprovals = user.role === "ADMIN";
+  const canSeePendingApprovals = false;
   const canSeeLocationInsight = user.role === "HOSPITAL" || user.role === "MEDICAL";
 
+  const userLocationCode = useMemo(
+    () =>
+      toPincodeLikeCode({
+        district: user?.location?.district || "",
+        village: user?.location?.village || "",
+        latitude: user?.location?.latitude,
+        longitude: user?.location?.longitude,
+      }),
+    [user?.location?.district, user?.location?.latitude, user?.location?.longitude, user?.location?.village]
+  );
+
   const loadReports = useCallback(
-    async (activeFilters = { district: "", village: "", disease: "", reporterRole: "" }) => {
+    async (_activeFilters = { district: "", village: "", disease: "", reporterRole: "" }) => {
       setIsLoadingReports(true);
 
       try {
-        const params = new URLSearchParams({ limit: "200" });
-        if (user.role === "ADMIN") {
-          if (activeFilters.district) params.set("district", activeFilters.district);
-          if (activeFilters.village) params.set("village", activeFilters.village);
-          if (activeFilters.disease) params.set("disease", activeFilters.disease);
-          if (activeFilters.reporterRole) params.set("reporterRole", activeFilters.reporterRole);
-        }
-
-        const response = await fetch(`/api/health-data?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const payload = await readApiPayload(response);
-
-        if (!response.ok) {
-          throw new Error(resolveApiError(payload, "Failed to load map data"));
-        }
-
-        setReports(Array.isArray(payload?.data) ? payload.data : []);
+        const data = await backendGet(
+          `/api/v1/cases?location=${encodeURIComponent(userLocationCode)}&limit=200`,
+          {},
+          "Failed to load map data"
+        );
+        const mapped = Array.isArray(data)
+          ? data.map((item) => fromBackendCaseRecord(item, user.location))
+          : [];
+        setReports(mapped);
       } catch (error) {
         toast.error("Data load failed", error.message || "Please refresh and try again.");
       } finally {
         setIsLoadingReports(false);
       }
     },
-    [toast, user.role]
+    [toast, user.location, userLocationCode]
   );
 
   const loadPendingUsers = useCallback(async () => {
@@ -212,17 +223,7 @@ export default function WorkspaceClient({ user }) {
     setIsLoadingPending(true);
 
     try {
-      const response = await fetch("/api/admin/pending-users", {
-        method: "GET",
-        cache: "no-store",
-      });
-      const payload = await readApiPayload(response);
-
-      if (!response.ok) {
-        throw new Error(resolveApiError(payload, "Failed to fetch pending users"));
-      }
-
-      setPendingUsers(Array.isArray(payload?.data) ? payload.data : []);
+      setPendingUsers([]);
     } catch (error) {
       toast.error("Pending users failed", error.message || "Please refresh.");
     } finally {
@@ -244,36 +245,14 @@ export default function WorkspaceClient({ user }) {
       setIsLoadingAshaDirectory(true);
 
       try {
-        const params = new URLSearchParams({ limit: "150" });
-        if (activeLookup.district) params.set("district", activeLookup.district);
-        if (activeLookup.village) params.set("village", activeLookup.village);
-        if (activeLookup.radiusKm) params.set("radiusKm", activeLookup.radiusKm);
-
-        const hasLat = normalizeText(activeLookup.latitude) !== "";
-        const hasLng = normalizeText(activeLookup.longitude) !== "";
-        if (hasLat && hasLng) {
-          params.set("latitude", activeLookup.latitude);
-          params.set("longitude", activeLookup.longitude);
-        }
-
-        const response = await fetch(`/api/admin/asha-workers?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const payload = await readApiPayload(response);
-
-        if (!response.ok) {
-          throw new Error(resolveApiError(payload, "Failed to load ASHA directory"));
-        }
-
         setAshaDirectory({
-          data: Array.isArray(payload?.data) ? payload.data : [],
-          exact: Array.isArray(payload?.exact) ? payload.exact : [],
-          nearby: Array.isArray(payload?.nearby) ? payload.nearby : [],
-          others: Array.isArray(payload?.others) ? payload.others : [],
-          context: payload?.context || {
-            district: null,
-            village: null,
+          data: [],
+          exact: [],
+          nearby: [],
+          others: [],
+          context: {
+            district: activeLookup.district || null,
+            village: activeLookup.village || null,
             radiusKm: Number(activeLookup.radiusKm) || 12,
           },
         });
@@ -305,6 +284,46 @@ export default function WorkspaceClient({ user }) {
       loadAshaDirectory();
     }
   }, [canCreateAsha, canSeePendingApprovals, loadAshaDirectory, loadPendingUsers, loadReports]);
+
+  useEffect(() => {
+    if (!reports.length) {
+      setPrediction(null);
+      setPredictionError("");
+      return;
+    }
+
+    let cancelled = false;
+    const loadPrediction = async () => {
+      setIsLoadingPrediction(true);
+      setPredictionError("");
+      try {
+        const payload = toPredictionPayload(reports, user.location);
+        const result = await backendPost(
+          "/api/v1/predictions/outbreak",
+          payload,
+          {},
+          "Failed to load outbreak prediction"
+        );
+        if (!cancelled) {
+          setPrediction(result);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setPrediction(null);
+          setPredictionError(error.message || "Could not fetch prediction.");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingPrediction(false);
+        }
+      }
+    };
+
+    loadPrediction();
+    return () => {
+      cancelled = true;
+    };
+  }, [reports, user.location]);
 
   const summary = useMemo(() => {
     return reports.reduce(
@@ -367,28 +386,6 @@ export default function WorkspaceClient({ user }) {
     setIsCreatingAsha(true);
 
     try {
-      const response = await fetch("/api/admin/create-asha", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: createAshaForm.name,
-          email: createAshaForm.email,
-          password: createAshaForm.password,
-          location: {
-            village: createAshaForm.village,
-            district: createAshaForm.district,
-            latitude: createAshaForm.latitude,
-            longitude: createAshaForm.longitude,
-          },
-        }),
-      });
-
-      const payload = await readApiPayload(response);
-
-      if (!response.ok) {
-        throw new Error(resolveApiError(payload, "Failed to create ASHA worker"));
-      }
-
       const nextLookup = {
         district: createAshaForm.district || "",
         village: createAshaForm.village || "",
@@ -397,7 +394,7 @@ export default function WorkspaceClient({ user }) {
         radiusKm: ashaLookup.radiusKm || "12",
       };
 
-      toast.success("ASHA created", `${payload?.user?.workerId || ""} is active now.`);
+      toast.info("Backend mode", "ASHA creation endpoint is not available in backend v1.");
       setAshaLookup(nextLookup);
       loadAshaDirectory(nextLookup);
       setCreateAshaForm({
@@ -420,17 +417,7 @@ export default function WorkspaceClient({ user }) {
     setApprovingUserId(userId);
 
     try {
-      const response = await fetch(`/api/admin/approve/${userId}`, {
-        method: "POST",
-      });
-      const payload = await readApiPayload(response);
-
-      if (!response.ok) {
-        throw new Error(resolveApiError(payload, "Approval failed"));
-      }
-
-      toast.success("User approved", `${role} account is now approved.`);
-      loadPendingUsers();
+      toast.info("Backend mode", `Approval for ${role} is unavailable in backend v1.`);
     } catch (error) {
       toast.error("Approval failed", error.message || "Please retry.");
     } finally {
@@ -443,24 +430,10 @@ export default function WorkspaceClient({ user }) {
     setIsSubmittingReport(true);
 
     try {
-      const response = await fetch("/api/health-data", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          disease: reportForm.disease,
-          householdsVisited: reportForm.householdsVisited,
-          newCases: reportForm.newCases,
-          criticalCases: reportForm.criticalCases,
-          notes: reportForm.notes,
-          latitude: reportForm.latitude,
-          longitude: reportForm.longitude,
-        }),
-      });
-
-      const payload = await readApiPayload(response);
-      if (!response.ok) {
-        throw new Error(resolveApiError(payload, "Failed to submit report"));
-      }
+      const payload = toBackendCasePayload(reportForm, user);
+      const path =
+        user.role === "MEDICAL" ? "/api/v1/cases/medical-shop/text" : "/api/v1/cases/asha/text";
+      await backendPost(path, payload, {}, "Failed to submit report");
 
       toast.success("Report submitted", "Health data is now visible on map.");
       setReportForm((current) => ({
@@ -508,8 +481,8 @@ export default function WorkspaceClient({ user }) {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="mb-2 flex items-center gap-2">
-                <Activity size={18} className="text-sky-600" />
-                <p className="text-xs font-semibold tracking-[0.2em] text-sky-700">WORKSPACE</p>
+                <Activity size={18} className="text-emerald-600" />
+                <p className="text-xs font-semibold tracking-[0.2em] text-emerald-700">WORKSPACE</p>
               </div>
               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 md:text-3xl">
                 Welcome, {user.name || user.email}
@@ -521,14 +494,10 @@ export default function WorkspaceClient({ user }) {
               <RoleIntro role={user.role} />
             </div>
 
-            <button
-              type="button"
-              onClick={() => signOut({ callbackUrl: "/" })}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
+            <Button type="button" variant="secondary" size="md" onClick={() => signOut({ callbackUrl: "/" })}>
               <LogOut size={16} />
               Sign out
-            </button>
+            </Button>
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -547,7 +516,7 @@ export default function WorkspaceClient({ user }) {
                 className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"
               >
                 <div className="flex items-center gap-2">
-                  <ShieldCheck size={18} className="text-amber-600" />
+                  <ShieldCheck size={18} className="text-emerald-600" />
                   <h2 className="text-lg font-bold text-slate-900">Create ASHA Worker</h2>
                 </div>
 
@@ -558,7 +527,7 @@ export default function WorkspaceClient({ user }) {
                     onChange={(event) =>
                       setCreateAshaForm((current) => ({ ...current, name: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                     required
                   />
                   <input
@@ -568,7 +537,7 @@ export default function WorkspaceClient({ user }) {
                     onChange={(event) =>
                       setCreateAshaForm((current) => ({ ...current, email: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                     required
                   />
                   <input
@@ -578,7 +547,7 @@ export default function WorkspaceClient({ user }) {
                     onChange={(event) =>
                       setCreateAshaForm((current) => ({ ...current, password: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                     required
                   />
 
@@ -602,7 +571,7 @@ export default function WorkspaceClient({ user }) {
                 <button
                   type="submit"
                   disabled={isCreatingAsha}
-                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isCreatingAsha ? "Creating..." : "Create ASHA Worker"}
                 </button>
@@ -617,7 +586,7 @@ export default function WorkspaceClient({ user }) {
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, district: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                   />
                   <input
                     placeholder="Village"
@@ -625,7 +594,7 @@ export default function WorkspaceClient({ user }) {
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, village: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                   />
                   <input
                     placeholder="Disease"
@@ -633,14 +602,14 @@ export default function WorkspaceClient({ user }) {
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, disease: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                   />
                   <select
                     value={filters.reporterRole}
                     onChange={(event) =>
                       setFilters((current) => ({ ...current, reporterRole: event.target.value }))
                     }
-                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                   >
                     <option value="">All Sources</option>
                     <option value="ASHA">ASHA</option>
@@ -650,7 +619,7 @@ export default function WorkspaceClient({ user }) {
                 <button
                   type="button"
                   onClick={() => loadReports(filters)}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600"
                 >
                   Apply Filters
                 </button>
@@ -661,10 +630,10 @@ export default function WorkspaceClient({ user }) {
               </section>
             </section>
 
-            <section className="rounded-3xl border border-cyan-200/80 bg-[linear-gradient(135deg,#ecfeff_0%,#ffffff_45%,#f0f9ff_100%)] p-5 shadow-sm md:p-6">
+            <section className="rounded-3xl border border-emerald-200/80 bg-[linear-gradient(135deg,#ecfdf5_0%,#ffffff_45%,#f0fdf4_100%)] p-5 shadow-sm md:p-6">
               <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-cyan-700">
+                  <p className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.18em] text-emerald-700">
                     <Users size={14} />
                     ASHA MEMORY BOARD
                   </p>
@@ -675,7 +644,7 @@ export default function WorkspaceClient({ user }) {
                 <button
                   type="button"
                   onClick={() => loadAshaDirectory(ashaLookup)}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-300 bg-white px-3 py-2 text-sm font-semibold text-cyan-700 transition hover:bg-cyan-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50"
                 >
                   <LocateFixed size={15} />
                   Refresh Board
@@ -689,7 +658,7 @@ export default function WorkspaceClient({ user }) {
                   onChange={(event) =>
                     setAshaLookup((current) => ({ ...current, district: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-cyan-100 focus:border-cyan-500 focus:ring md:col-span-2"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-100 focus:border-emerald-500 focus:ring md:col-span-2"
                 />
                 <input
                   placeholder="Village"
@@ -697,7 +666,7 @@ export default function WorkspaceClient({ user }) {
                   onChange={(event) =>
                     setAshaLookup((current) => ({ ...current, village: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-cyan-100 focus:border-cyan-500 focus:ring md:col-span-2"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-100 focus:border-emerald-500 focus:ring md:col-span-2"
                 />
                 <input
                   type="number"
@@ -709,7 +678,7 @@ export default function WorkspaceClient({ user }) {
                   onChange={(event) =>
                     setAshaLookup((current) => ({ ...current, radiusKm: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-cyan-100 focus:border-cyan-500 focus:ring"
+                  className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-100 focus:border-emerald-500 focus:ring"
                 />
                 <button
                   type="button"
@@ -724,7 +693,7 @@ export default function WorkspaceClient({ user }) {
               </div>
 
               <div className="mt-3 grid gap-3 md:grid-cols-4">
-                <div className="rounded-2xl border border-cyan-100 bg-white/90 p-3">
+                <div className="rounded-2xl border border-emerald-100 bg-white/90 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total ASHA</p>
                   <p className="mt-1 text-2xl font-bold text-slate-900">{ashaDirectory.data.length}</p>
                 </div>
@@ -734,17 +703,17 @@ export default function WorkspaceClient({ user }) {
                   </p>
                   <p className="mt-1 text-2xl font-bold text-emerald-700">{ashaDirectory.exact.length}</p>
                 </div>
-                <div className="rounded-2xl border border-amber-100 bg-white/90 p-3">
+                <div className="rounded-2xl border border-emerald-100 bg-white/90 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Nearby Match
                   </p>
-                  <p className="mt-1 text-2xl font-bold text-amber-700">{ashaDirectory.nearby.length}</p>
+                  <p className="mt-1 text-2xl font-bold text-emerald-700">{ashaDirectory.nearby.length}</p>
                 </div>
-                <div className="rounded-2xl border border-violet-100 bg-white/90 p-3">
+                <div className="rounded-2xl border border-emerald-100 bg-white/90 p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Search Radius
                   </p>
-                  <p className="mt-1 text-2xl font-bold text-violet-700">
+                  <p className="mt-1 text-2xl font-bold text-emerald-700">
                     {ashaDirectory.context?.radiusKm || 12} km
                   </p>
                 </div>
@@ -803,7 +772,7 @@ export default function WorkspaceClient({ user }) {
                           {matchTag}
                         </span>
                         {worker.distanceKm !== null ? (
-                          <span className="rounded-full bg-cyan-100 px-2.5 py-1 font-medium text-cyan-800">
+                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-medium text-emerald-800">
                             {formatDistance(worker.distanceKm)}
                           </span>
                         ) : null}
@@ -894,7 +863,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, disease: event.target.value }))
                 }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                 required
               />
               <input
@@ -905,7 +874,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, householdsVisited: event.target.value }))
                 }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                 required
               />
               <input
@@ -916,7 +885,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, newCases: event.target.value }))
                 }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                 required
               />
               <input
@@ -927,7 +896,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, criticalCases: event.target.value }))
                 }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                 required
               />
               <input
@@ -938,7 +907,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, latitude: event.target.value }))
                 }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                 required
               />
               <input
@@ -949,7 +918,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, longitude: event.target.value }))
                 }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
                 required
               />
 
@@ -971,7 +940,7 @@ export default function WorkspaceClient({ user }) {
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, notes: event.target.value }))
                 }
-                className="min-h-[90px] rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring md:col-span-2"
+                className="min-h-[90px] rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring md:col-span-2"
               />
               <div className="flex flex-col gap-3 md:col-span-2 md:flex-row">
                 <button
@@ -985,7 +954,7 @@ export default function WorkspaceClient({ user }) {
                 <button
                   type="submit"
                   disabled={isSubmittingReport}
-                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmittingReport ? "Submitting..." : "Submit Report"}
                 </button>
@@ -1014,6 +983,34 @@ export default function WorkspaceClient({ user }) {
             </div>
           </section>
         ) : null}
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+          <h2 className="mb-2 text-lg font-bold text-slate-900">Outbreak Prediction</h2>
+          {isLoadingPrediction ? <p className="text-sm text-slate-500">Loading prediction...</p> : null}
+          {predictionError ? <p className="text-sm text-rose-600">{predictionError}</p> : null}
+          {!isLoadingPrediction && !predictionError && prediction ? (
+            <div className="grid gap-3 md:grid-cols-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-500">Risk Level</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{prediction.risk_level}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-500">Outbreak Status</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{prediction.outbreak_status}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-500">Current Cases</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{prediction.cases?.current ?? 0}</p>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <p className="text-xs font-semibold text-slate-500">Confidence</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">
+                  {Math.round((prediction.confidence_score || 0) * 100)}%
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </section>
 
         <section className="space-y-3">
           <div className="flex items-center justify-between">

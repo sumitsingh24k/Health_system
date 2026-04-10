@@ -1,36 +1,62 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Health System Frontend
 
-## Getting Started
+Next.js dashboard and role-based UI for Health System.
 
-First, run the development server:
+## Environment
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Set these values in `.env`:
+
+- `NEXT_PUBLIC_BACKEND_URL=http://localhost:8000`
+- `NEXTAUTH_URL=http://localhost:3000`
+- `NEXTAUTH_SECRET=<secret>`
+- `MONGO_URI=<mongo uri>` (still used by auth/session paths)
+
+## Local Run
+
+1. Start backend first:
+   - `cd ../backend`
+   - `uvicorn app.main:app --reload --port 8000`
+2. Start frontend:
+   - `cd ../frontend`
+   - `npm install`
+   - `npm run dev`
+
+Frontend runs on `http://localhost:3000`.
+
+## Backend API Integration
+
+Frontend now calls backend APIs directly:
+
+- `GET /health`
+- `GET /api/v1/cases?location=XXXXXX&limit=...`
+- `POST /api/v1/cases/asha/text`
+- `POST /api/v1/cases/medical-shop/text`
+- `POST /api/v1/predictions/outbreak`
+
+### Response handling
+
+For `/api/v1` routes, frontend expects:
+
+```json
+{
+  "success": true,
+  "message": "ok",
+  "data": {}
+}
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+For error responses, frontend handles:
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+- `400` request errors
+- `422` validation errors
+- `503` backend/LLM unavailable
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## UX and Theme
 
-## Learn More
+- Global color tokens are defined in `globals.css`.
+- Shared button variants are implemented in `app/components/ui/button.js`.
+- Core pages (`/`, `/login`, `/workspace`, registration flows) use the unified color and button system.
 
-To learn more about Next.js, take a look at the following resources:
+## Notes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Backend `v1` currently does not expose admin/user management routes (create ASHA, approval queues, worker registry). The UI keeps those flows non-primary while preserving core reporting and prediction workflows.

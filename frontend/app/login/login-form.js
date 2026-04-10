@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useToast } from "@/app/components/toast-provider";
+import Button from "@/app/components/ui/button";
 
 export default function LoginForm({ callbackUrl = "/" }) {
   const router = useRouter();
@@ -45,7 +46,7 @@ export default function LoginForm({ callbackUrl = "/" }) {
       className="w-full max-w-md space-y-5 rounded-3xl border border-white/70 bg-white/90 p-7 shadow-xl backdrop-blur"
     >
       <div>
-        <p className="mb-2 inline-flex rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold tracking-wide text-sky-700">
+        <p className="mb-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-700">
           SECURE ACCESS
         </p>
         <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
@@ -63,7 +64,7 @@ export default function LoginForm({ callbackUrl = "/" }) {
           placeholder="admin / ASHA_001 / your email"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none ring-sky-200 transition focus:border-sky-500 focus:ring"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none ring-emerald-200 transition focus:border-emerald-500 focus:ring"
           required
         />
       </label>
@@ -74,18 +75,14 @@ export default function LoginForm({ callbackUrl = "/" }) {
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none ring-sky-200 transition focus:border-sky-500 focus:ring"
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none ring-emerald-200 transition focus:border-emerald-500 focus:ring"
           required
         />
       </label>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full rounded-xl bg-slate-900 px-4 py-2.5 font-semibold text-white transition hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
-      >
+      <Button type="submit" disabled={isSubmitting} className="w-full">
         {isSubmitting ? "Signing in..." : "Sign in"}
-      </button>
+      </Button>
 
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
         <p className="font-semibold text-slate-800">Need a new account?</p>
@@ -94,10 +91,10 @@ export default function LoginForm({ callbackUrl = "/" }) {
           Hospital/Medical can use email.
         </p>
         <div className="mt-1 flex flex-wrap gap-3">
-          <Link href="/register/hospital" className="font-semibold text-sky-700 hover:text-sky-500">
+          <Link href="/register/hospital" className="font-semibold text-emerald-700 hover:text-emerald-600">
             Hospital Register
           </Link>
-          <Link href="/register/medical" className="font-semibold text-sky-700 hover:text-sky-500">
+          <Link href="/register/medical" className="font-semibold text-emerald-700 hover:text-emerald-600">
             Medical Register
           </Link>
         </div>

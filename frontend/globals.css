@@ -2,15 +2,44 @@
 @import "leaflet/dist/leaflet.css";
 
 :root {
-  --background: #f7fafc;
-  --foreground: #0f172a;
+  --background: #f3f7f6;
+  --foreground: #1f2937;
   --surface: #ffffff;
+  --surface-muted: #eef5f3;
+  --primary: #10b981;
+  --primary-hover: #059669;
+  --primary-soft: #a7f3d0;
+  --secondary: #d1fae5;
+  --border: #d1d5db;
+  --success: #10b981;
+  --danger: #ef4444;
+  --muted-text: #6b7280;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-border: var(--border);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-muted-text: var(--muted-text);
+  --color-text: var(--foreground);
+  --color-primary-foreground: #ffffff;
+  --color-secondary-foreground: #065f46;
+  --color-muted-foreground: #4b5563;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-input: #d1d5db;
+  --color-accent: #ecfdf5;
+  --color-accent-foreground: #064e3b;
+  --color-ring: #34d399;
+  --color-ring-offset-background: #f3f7f6;
 }
 
 body {

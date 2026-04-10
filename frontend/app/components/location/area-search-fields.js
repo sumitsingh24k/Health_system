@@ -129,7 +129,7 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
   return (
     <div ref={containerRef} className={`space-y-3 ${className}`}>
       <div className="relative">
-        <div className="flex items-center rounded-xl border border-slate-300 bg-white px-3 focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-200">
+        <div className="flex items-center rounded-xl border border-slate-300 bg-white px-3 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-200">
           <Search size={14} className="mr-2 text-slate-500" />
           <input
             placeholder="Type area (e.g. Indore, Madhya Pradesh)"
@@ -145,7 +145,7 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
             className="w-full bg-transparent py-2.5 text-sm outline-none"
             autoComplete="off"
           />
-          {isSearching ? <Loader2 size={15} className="animate-spin text-sky-700" /> : null}
+          {isSearching ? <Loader2 size={15} className="animate-spin text-emerald-700" /> : null}
         </div>
 
         {showSuggestions && (suggestions.length > 0 || normalizedQuery.length >= 3) ? (
@@ -159,7 +159,7 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
                   type="button"
                   onClick={() => applyLocation(item)}
                   className={`w-full rounded-lg px-3 py-2 text-left transition ${
-                    index === activeIndex ? "bg-sky-50" : "hover:bg-slate-50"
+                    index === activeIndex ? "bg-emerald-50" : "hover:bg-slate-50"
                   }`}
                 >
                   <p className="truncate text-sm font-semibold text-slate-900">{item.village}</p>
@@ -180,20 +180,20 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
           placeholder="Village"
           value={value.village}
           onChange={(event) => onChange({ village: event.target.value })}
-          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
           required
         />
         <input
           placeholder="District"
           value={value.district}
           onChange={(event) => onChange({ district: event.target.value })}
-          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
           required
         />
       </div>
 
       <div className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        <MapPin size={13} className="text-sky-700" />
+        <MapPin size={13} className="text-emerald-700" />
         {value.latitude && value.longitude
           ? `GPS: ${value.latitude}, ${value.longitude}`
           : "GPS is auto-filled after selecting suggestion"}

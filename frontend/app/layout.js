@@ -1,5 +1,6 @@
 import "../globals.css";
 import Providers from "@/app/components/providers";
+import ConditionalAppShell from "@/app/components/conditional-app-shell";
 
 export const metadata = {
   title: "Health System",
@@ -10,7 +11,9 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className="h-full">
       <body className="min-h-full antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          <ConditionalAppShell>{children}</ConditionalAppShell>
+        </Providers>
       </body>
     </html>
   );
