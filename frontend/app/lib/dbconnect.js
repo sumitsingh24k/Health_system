@@ -18,11 +18,12 @@ function toDatabaseError(error) {
   if (
     normalized.includes("etimedout") ||
     normalized.includes("server selection timed out") ||
+    normalized.includes("querysrv") ||
     normalized.includes("econnrefused") ||
     normalized.includes("enotfound")
   ) {
     return new Error(
-      `Database connection failed: ${reason}. Check MONGO_URI and allow network access to MongoDB/Atlas (including IP allowlist).`
+      `Database connection failed: ${reason}. Check MONGO_URI and allow network access to MongoDB/Atlas (including IP allowlist). If SRV DNS is blocked in your network, use a non-SRV Atlas URI (mongodb://host1,host2,host3/...) instead of mongodb+srv://.`
     );
   }
 

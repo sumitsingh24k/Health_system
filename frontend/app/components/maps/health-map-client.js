@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import {
   Circle,
@@ -14,11 +14,39 @@ import {
 } from "react-leaflet";
 
 const INDIA_CENTER = [22.9734, 78.6569];
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || "";
 const MAP_BY_ROLE = {
   ADMIN: { center: INDIA_CENTER, zoom: 5 },
   HOSPITAL: { center: [22.9734, 78.6569], zoom: 6 },
   MEDICAL: { center: [22.9734, 78.6569], zoom: 7 },
   ASHA: { center: [22.9734, 78.6569], zoom: 8 },
+};
+const BASEMAPS = {
+  osm: {
+    id: "osm",
+    label: "Classic",
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  },
+  voyager: {
+    id: "voyager",
+    label: "City View",
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  },
+  mapbox_streets: {
+    id: "mapbox_streets",
+    label: "Mapbox Streets",
+    url: `https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+    attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; OpenStreetMap',
+  },
+  mapbox_satellite: {
+    id: "mapbox_satellite",
+    label: "Mapbox Satellite",
+    url: `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12/tiles/256/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`,
+    attribution: '&copy; <a href="https://www.mapbox.com/">Mapbox</a> &copy; OpenStreetMap',
+  },
 };
 
 function parseDate(value) {
@@ -51,6 +79,24 @@ function resolveRiskLabel(riskLevel) {
   if (riskLevel === "HIGH_RISK") return "HIGH RISK";
   if (riskLevel === "MEDIUM_RISK") return "MEDIUM";
   return "SAFE";
+}
+
+function normalizeText(value) {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function matchesRoleScope(location, role, userLocation) {
+  if (role === "ADMIN") return true;
+
+  const districtMatch =
+    normalizeText(location?.district) === normalizeText(userLocation?.district);
+
+  if (role === "HOSPITAL") {
+    return districtMatch;
+  }
+
+  const villageMatch = normalizeText(location?.village) === normalizeText(userLocation?.village);
+  return districtMatch && villageMatch;
 }
 
 function createMarkerIcon({ label, color, pulse = false }) {
@@ -193,6 +239,7 @@ export default function HealthMapClient({
   onRegionSelect = null,
 }) {
   const [zoomLevel, setZoomLevel] = useState(MAP_BY_ROLE[role]?.zoom || 6);
+  const [baseMap, setBaseMap] = useState(MAPBOX_TOKEN ? "mapbox_streets" : "voyager");
   const [layers, setLayers] = useState({
     heatmap: true,
     markers: true,
@@ -238,8 +285,9 @@ export default function HealthMapClient({
           criticalCases: report?.criticalCases || 0,
         };
       })
+      .filter((point) => matchesRoleScope(point?.location, role, userLocation))
       .filter(Boolean);
-  }, [reports]);
+  }, [reports, role, userLocation]);
 
   const mapPoints = useMemo(() => {
     const points = casePoints.map((point) => [point.latitude, point.longitude]);
@@ -248,6 +296,10 @@ export default function HealthMapClient({
     const medicalTeams = Array.isArray(entities?.medicalTeams) ? entities.medicalTeams : [];
 
     for (const person of [...ashaWorkers, ...hospitals, ...medicalTeams]) {
+      if (!matchesRoleScope(person?.location, role, userLocation)) {
+        continue;
+      }
+
       const latitude = person?.location?.latitude;
       const longitude = person?.location?.longitude;
       if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
@@ -256,7 +308,7 @@ export default function HealthMapClient({
     }
 
     return points;
-  }, [casePoints, entities]);
+  }, [casePoints, entities, role, userLocation]);
 
   const clusters = useMemo(() => buildClusters(casePoints, zoomLevel), [casePoints, zoomLevel]);
 
@@ -290,20 +342,54 @@ export default function HealthMapClient({
     });
   }, [clusters, riskZones]);
 
+  const scopedRiskZones = useMemo(
+    () =>
+      normalizedRiskZones.filter((zone) =>
+        matchesRoleScope({ district: zone.district, village: zone.village }, role, userLocation)
+      ),
+    [normalizedRiskZones, role, userLocation]
+  );
+
   const showClusters = layers.clusters && zoomLevel <= 7;
   const showIndividualCases = layers.markers && zoomLevel >= 7;
   const showHeatmap = layers.heatmap && zoomLevel <= 9;
 
-  const ashaWorkers = Array.isArray(entities?.ashaWorkers) ? entities.ashaWorkers : [];
-  const hospitals = Array.isArray(entities?.hospitals) ? entities.hospitals : [];
-  const medicalTeams = Array.isArray(entities?.medicalTeams) ? entities.medicalTeams : [];
+  const ashaWorkers = useMemo(
+    () =>
+      (Array.isArray(entities?.ashaWorkers) ? entities.ashaWorkers : []).filter((worker) =>
+        matchesRoleScope(worker?.location, role, userLocation)
+      ),
+    [entities, role, userLocation]
+  );
+  const hospitals = useMemo(
+    () =>
+      (Array.isArray(entities?.hospitals) ? entities.hospitals : []).filter((unit) =>
+        matchesRoleScope(unit?.location, role, userLocation)
+      ),
+    [entities, role, userLocation]
+  );
+  const medicalTeams = useMemo(
+    () =>
+      (Array.isArray(entities?.medicalTeams) ? entities.medicalTeams : []).filter((unit) =>
+        matchesRoleScope(unit?.location, role, userLocation)
+      ),
+    [entities, role, userLocation]
+  );
+
+  const baseMapOptions = useMemo(() => {
+    const defaults = [BASEMAPS.voyager, BASEMAPS.osm];
+    if (!MAPBOX_TOKEN) return defaults;
+    return [BASEMAPS.mapbox_streets, BASEMAPS.mapbox_satellite, BASEMAPS.voyager, BASEMAPS.osm];
+  }, []);
+
+  const activeBaseMap = BASEMAPS[baseMap] || BASEMAPS.voyager;
 
   return (
     <div className="relative h-[390px] w-full overflow-hidden rounded-3xl border border-slate-200 shadow-sm md:h-[560px]">
       <MapContainer center={MAP_BY_ROLE[role]?.center || INDIA_CENTER} zoom={MAP_BY_ROLE[role]?.zoom || 6} scrollWheelZoom className="h-full w-full">
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution={activeBaseMap.attribution}
+          url={activeBaseMap.url}
         />
 
         <BuildMapState
@@ -335,7 +421,7 @@ export default function HealthMapClient({
         ) : null}
 
         {layers.risk
-          ? normalizedRiskZones.map((zone) => (
+          ? scopedRiskZones.map((zone) => (
               <Circle
                 key={`risk-${zone.id}`}
                 center={[zone.latitude, zone.longitude]}
@@ -344,7 +430,11 @@ export default function HealthMapClient({
                   color: zone.riskColor || "#f59e0b",
                   fillColor: zone.riskColor || "#f59e0b",
                   fillOpacity: 0.12,
-                  weight: 2,
+                  weight:
+                    normalizeText(zone?.district) === normalizeText(selectedRegion?.district) &&
+                    normalizeText(zone?.village) === normalizeText(selectedRegion?.village)
+                      ? 4
+                      : 2,
                 }}
                 eventHandlers={{
                   click: () => {
@@ -361,7 +451,7 @@ export default function HealthMapClient({
                   <span className="text-[10px] font-bold">{resolveRiskLabel(zone.riskLevel)}</span>
                 </Tooltip>
                 <Popup>
-                  <div className="min-w-[210px] space-y-1 text-sm">
+                  <div className="min-w-[230px] space-y-1 text-sm">
                     <p className="text-sm font-bold text-slate-900">
                       {resolveRiskLabel(zone.riskLevel)} - {zone.village}
                     </p>
@@ -369,10 +459,23 @@ export default function HealthMapClient({
                       <strong>District:</strong> {zone.district}
                     </p>
                     <p>
-                      <strong>Cases:</strong> {zone.newCases || 0}
+                      <strong>Risk score:</strong> {zone.riskScore || 0}
                     </p>
                     <p>
-                      <strong>Critical:</strong> {zone.criticalCases || 0}
+                      <strong>Outbreak probability:</strong>{" "}
+                      {Number.isFinite(zone.outbreakProbabilityNext3Days)
+                        ? `${Math.round(zone.outbreakProbabilityNext3Days * 100)}%`
+                        : "N/A"}
+                    </p>
+                    <p>
+                      <strong>2-3 day prediction:</strong>{" "}
+                      {Number.isFinite(zone.predictedAdditionalCases3d)
+                        ? zone.predictedAdditionalCases3d
+                        : Math.max(
+                            0,
+                            Math.round((zone.newCases || 0) * 0.25 + (zone.criticalCases || 0) * 0.6)
+                          )}{" "}
+                      potential additional cases
                     </p>
                   </div>
                 </Popup>
@@ -381,20 +484,35 @@ export default function HealthMapClient({
           : null}
 
         {showHeatmap
-          ? normalizedRiskZones.map((zone) => {
+          ? scopedRiskZones.map((zone) => {
               const riskColor = zone.riskColor || "#f59e0b";
               const radius = Math.max(3500, (zone.newCases || 0) * 480);
               return (
-                <Circle
-                  key={`heat-${zone.id}`}
-                  center={[zone.latitude, zone.longitude]}
-                  radius={radius}
-                  pathOptions={{
-                    stroke: false,
-                    fillColor: riskColor,
-                    fillOpacity: 0.2,
-                  }}
-                />
+                <Fragment key={`heat-wrap-${zone.id}`}>
+                  <Circle
+                    key={`heat-${zone.id}`}
+                    center={[zone.latitude, zone.longitude]}
+                    radius={radius}
+                    pathOptions={{
+                      stroke: false,
+                      fillColor: riskColor,
+                      fillOpacity: 0.2,
+                    }}
+                  />
+                  {zone.riskLevel === "HIGH_RISK" ? (
+                    <Circle
+                      key={`spread-${zone.id}`}
+                      center={[zone.latitude, zone.longitude]}
+                      radius={Math.max(radius * 1.35, 5600)}
+                      pathOptions={{
+                        color: "#dc2626",
+                        fillOpacity: 0,
+                        weight: 1.8,
+                        dashArray: "8 8",
+                      }}
+                    />
+                  ) : null}
+                </Fragment>
               );
             })
           : null}
@@ -559,6 +677,23 @@ export default function HealthMapClient({
 
       <div className="absolute left-3 top-3 z-[600] w-[260px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">Map Layers</p>
+        <label className="mt-2 block space-y-1">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+            Basemap
+          </span>
+          <select
+            value={baseMap}
+            onChange={(event) => setBaseMap(event.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+          >
+            {baseMapOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <div className="mt-2 grid grid-cols-2 gap-2 text-slate-700">
           {[
             { key: "heatmap", label: "Heatmap" },
@@ -594,6 +729,11 @@ export default function HealthMapClient({
           <p>
             <strong>Selected role view:</strong> {role}
           </p>
+          {!MAPBOX_TOKEN ? (
+            <p>
+              <strong>Tip:</strong> add <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> for Mapbox layers.
+            </p>
+          ) : null}
         </div>
       </div>
 

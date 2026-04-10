@@ -69,6 +69,62 @@ const healthDataSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    medicineSales: {
+      type: [
+        {
+          _id: false,
+          medicine: {
+            type: String,
+            required: true,
+            trim: true,
+          },
+          unitsSold: {
+            type: Number,
+            min: 0,
+            default: 0,
+          },
+          unitPrice: {
+            type: Number,
+            min: 0,
+            default: 0,
+          },
+          benchmarkPrice: {
+            type: Number,
+            min: 0,
+            default: null,
+          },
+        },
+      ],
+      default: [],
+    },
+    verification: {
+      status: {
+        type: String,
+        enum: ["MATCHED", "PARTIAL_MISMATCH", "HIGH_MISMATCH", "NO_COUNTERPART"],
+        default: "NO_COUNTERPART",
+      },
+      mismatchScore: {
+        type: Number,
+        min: 0,
+        max: 1,
+        default: 0.5,
+      },
+      reasons: {
+        type: [String],
+        default: [],
+      },
+      counterpartReportId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "HealthData",
+        default: null,
+      },
+    },
+    trustScore: {
+      type: Number,
+      min: 0,
+      max: 1,
+      default: 0.5,
+    },
   },
   { timestamps: true }
 );
@@ -77,6 +133,12 @@ healthDataSchema.index({ "location.district": 1, "location.village": 1, reportDa
 healthDataSchema.index({ reportedBy: 1, reportDate: -1 });
 healthDataSchema.index({ disease: 1, reportDate: -1 });
 healthDataSchema.index({ reporterRole: 1, reportDate: -1 });
+healthDataSchema.index({
+  "location.district": 1,
+  "location.village": 1,
+  reporterRole: 1,
+  reportDate: -1,
+});
 
 export default mongoose.models.HealthData ||
   mongoose.model("HealthData", healthDataSchema);
