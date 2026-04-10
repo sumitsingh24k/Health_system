@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 import logging
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.cases import router as cases_router
+from app.api.predictions import router as predictions_router
 from app.db.indexes import create_indexes
 from app.db.mongo import mongodb
 
@@ -25,6 +27,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Health System API", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/health")
 async def health() -> dict[str, str | bool]:
@@ -36,3 +46,4 @@ async def health() -> dict[str, str | bool]:
 
 
 app.include_router(cases_router, prefix="/api/v1")
+app.include_router(predictions_router, prefix="/api/v1")

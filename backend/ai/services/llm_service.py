@@ -1,12 +1,13 @@
 import logging
+import os
 import requests
 from requests.exceptions import ConnectionError, Timeout, RequestException
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "llama3:8b"
-REQUEST_TIMEOUT = 120
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+REQUEST_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "120"))
 
 
 def call_llm(prompt: str) -> str:
