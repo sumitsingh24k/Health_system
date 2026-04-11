@@ -43,7 +43,7 @@ export default function HomePage() {
             <span className="rounded-xl bg-emerald-600 p-2 text-white">
               <Activity className="h-5 w-5" />
             </span>
-            <p className="text-lg font-semibold text-slate-900">Health System Portal</p>
+            <p className="text-lg font-semibold text-slate-900">JanSetu</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="secondary">

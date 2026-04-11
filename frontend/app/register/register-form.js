@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useToast } from "@/app/components/toast-provider";
+import { toast } from "sonner";
 import AreaSearchFields from "@/app/components/location/area-search-fields";
 import { backendGet } from "@/app/lib/api-client";
-import Button from "@/app/components/ui/button";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default function RegisterForm({ title, roleLabel }) {
-  const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -27,10 +27,10 @@ export default function RegisterForm({ title, roleLabel }) {
     try {
       await backendGet("/health", {}, "Backend is unavailable");
 
-      toast.info(
-        "Registration not supported in backend v1",
-        "Please login with existing credentials. Worker/admin onboarding APIs are not yet available."
-      );
+      toast.info("Registration not supported in backend v1", {
+        description:
+          "Please login with existing credentials. Worker/admin onboarding APIs are not yet available.",
+      });
       setForm({
         name: "",
         email: "",
@@ -41,7 +41,9 @@ export default function RegisterForm({ title, roleLabel }) {
         longitude: "",
       });
     } catch (error) {
-      toast.error("Backend unavailable", error.message || "Please verify backend server status.");
+      toast.error("Backend unavailable", {
+        description: error.message || "Please verify backend server status.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -61,27 +63,27 @@ export default function RegisterForm({ title, roleLabel }) {
         </p>
 
         <div className="grid gap-3 md:grid-cols-2">
-          <input
+          <Input
             placeholder="Full Name"
             value={form.name}
             onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-            className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
+            className="border-slate-300 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
             required
           />
-          <input
+          <Input
             type="email"
             placeholder="Email"
             value={form.email}
             onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-            className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
+            className="border-slate-300 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
             required
           />
-          <input
+          <Input
             type="password"
             placeholder="Password"
             value={form.password}
             onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
-            className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
+            className="border-slate-300 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
             required
           />
 
@@ -97,7 +99,7 @@ export default function RegisterForm({ title, roleLabel }) {
           />
         </div>
 
-        <Button type="submit" disabled={isSubmitting} className="w-full">
+        <Button type="submit" disabled={isSubmitting} className="w-full rounded-xl">
           {isSubmitting ? "Submitting..." : `Register ${roleLabel}`}
         </Button>
 

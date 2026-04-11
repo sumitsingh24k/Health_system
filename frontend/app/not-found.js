@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
   const router = useRouter();
@@ -30,25 +31,15 @@ export default function NotFound() {
         This URL does not exist. Use the sidebar or go back to your workspace.
       </p>
       <div className="flex flex-wrap justify-center gap-3">
-        <Link
-          href="/workspace"
-          className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-        >
-          Workspace
-        </Link>
-        <Link
-          href="/"
-          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-        >
-          Home
-        </Link>
-        <button
-          type="button"
-          onClick={() => router.push("/login")}
-          className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"
-        >
+        <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+          <Link href="/workspace">Workspace</Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/">Home</Link>
+        </Button>
+        <Button variant="outline" type="button" onClick={() => router.push("/login")}>
           Sign in as another user
-        </button>
+        </Button>
       </div>
     </main>
   );

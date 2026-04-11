@@ -1,4 +1,4 @@
-# Health System — Architecture & APIs (simple guide)
+# JanSetu — Architecture & APIs (simple guide)
 
 This document explains how **`Health_system/frontend`** and **`Health_system/backend`** fit together: which servers run, which APIs exist, and whether the Python backend is required.
 

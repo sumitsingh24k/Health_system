@@ -3,8 +3,8 @@ import Providers from "@/app/components/providers";
 import ConditionalAppShell from "@/app/components/conditional-app-shell";
 
 export const metadata = {
-  title: "Health System",
-  description: "Healthcare monitoring platform",
+  title: "JanSetu",
+  description: "JanSetu — public health monitoring and response",
 };
 
 export default function RootLayout({ children }) {

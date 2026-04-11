@@ -70,9 +70,9 @@ function resolveSeverity(report) {
 }
 
 function resolveCaseColor(severity) {
-  if (severity === "HIGH") return "#dc2626";
-  if (severity === "MEDIUM") return "#f59e0b";
-  return "#16a34a";
+  if (severity === "HIGH") return "#065f46";
+  if (severity === "MEDIUM") return "#059669";
+  return "#34d399";
 }
 
 function resolveRiskLabel(riskLevel) {
@@ -110,7 +110,7 @@ function createMarkerIcon({ label, color, pulse = false }) {
 }
 
 function createClusterIcon(cluster) {
-  const color = cluster.newCases >= 25 ? "#dc2626" : cluster.newCases >= 10 ? "#f59e0b" : "#0ea5e9";
+  const color = cluster.newCases >= 25 ? "#065f46" : cluster.newCases >= 10 ? "#059669" : "#34d399";
 
   return L.divIcon({
     className: "",
@@ -251,15 +251,15 @@ export default function HealthMapClient({
 
   const caseIcons = useMemo(
     () => ({
-      HIGH: createMarkerIcon({ label: "P", color: "#dc2626" }),
-      MEDIUM: createMarkerIcon({ label: "P", color: "#f59e0b" }),
-      LOW: createMarkerIcon({ label: "P", color: "#16a34a" }),
-      HIGH_NEW: createMarkerIcon({ label: "P", color: "#dc2626", pulse: true }),
-      MEDIUM_NEW: createMarkerIcon({ label: "P", color: "#f59e0b", pulse: true }),
-      LOW_NEW: createMarkerIcon({ label: "P", color: "#16a34a", pulse: true }),
-      ASHA: createMarkerIcon({ label: "A", color: "#db2777" }),
-      HOSPITAL: createMarkerIcon({ label: "H", color: "#2563eb" }),
-      MEDICAL: createMarkerIcon({ label: "M", color: "#0d9488" }),
+      HIGH: createMarkerIcon({ label: "P", color: "#065f46" }),
+      MEDIUM: createMarkerIcon({ label: "P", color: "#059669" }),
+      LOW: createMarkerIcon({ label: "P", color: "#34d399" }),
+      HIGH_NEW: createMarkerIcon({ label: "P", color: "#065f46", pulse: true }),
+      MEDIUM_NEW: createMarkerIcon({ label: "P", color: "#059669", pulse: true }),
+      LOW_NEW: createMarkerIcon({ label: "P", color: "#34d399", pulse: true }),
+      ASHA: createMarkerIcon({ label: "A", color: "#047857" }),
+      HOSPITAL: createMarkerIcon({ label: "H", color: "#064e3b" }),
+      MEDICAL: createMarkerIcon({ label: "M", color: "#0f766e" }),
     }),
     []
   );
@@ -333,10 +333,10 @@ export default function HealthMapClient({
         riskLevel,
         riskColor:
           riskLevel === "HIGH_RISK"
-            ? "#dc2626"
+            ? "#065f46"
             : riskLevel === "MEDIUM_RISK"
-              ? "#f59e0b"
-              : "#22c55e",
+              ? "#059669"
+              : "#34d399",
         radiusMeters: Math.max(4500, cluster.newCases * 700),
       };
     });
@@ -407,9 +407,9 @@ export default function HealthMapClient({
             center={[userLocation.latitude, userLocation.longitude]}
             radius={6000}
             pathOptions={{
-              color: "#be123c",
-              fillColor: "#fda4af",
-              fillOpacity: 0.14,
+              color: "#047857",
+              fillColor: "#a7f3d0",
+              fillOpacity: 0.2,
               weight: 2,
               dashArray: "6 8",
             }}
@@ -427,8 +427,8 @@ export default function HealthMapClient({
                 center={[zone.latitude, zone.longitude]}
                 radius={zone.radiusMeters || 6000}
                 pathOptions={{
-                  color: zone.riskColor || "#f59e0b",
-                  fillColor: zone.riskColor || "#f59e0b",
+                  color: zone.riskColor || "#059669",
+                  fillColor: zone.riskColor || "#059669",
                   fillOpacity: 0.12,
                   weight:
                     normalizeText(zone?.district) === normalizeText(selectedRegion?.district) &&
@@ -485,7 +485,7 @@ export default function HealthMapClient({
 
         {showHeatmap
           ? scopedRiskZones.map((zone) => {
-              const riskColor = zone.riskColor || "#f59e0b";
+              const riskColor = zone.riskColor || "#059669";
               const radius = Math.max(3500, (zone.newCases || 0) * 480);
               return (
                 <Fragment key={`heat-wrap-${zone.id}`}>
@@ -505,7 +505,7 @@ export default function HealthMapClient({
                       center={[zone.latitude, zone.longitude]}
                       radius={Math.max(radius * 1.35, 5600)}
                       pathOptions={{
-                        color: "#dc2626",
+                        color: "#065f46",
                         fillOpacity: 0,
                         weight: 1.8,
                         dashArray: "8 8",
@@ -602,7 +602,7 @@ export default function HealthMapClient({
                         href={`https://www.google.com/maps?q=${point.latitude},${point.longitude}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-block pt-1 text-xs font-semibold text-sky-700 underline"
+                        className="inline-block pt-1 text-xs font-semibold text-emerald-800 underline"
                       >
                         Open in Google Maps
                       </a>
@@ -720,8 +720,9 @@ export default function HealthMapClient({
         </div>
         <div className="mt-3 space-y-1 text-[11px] text-slate-600">
           <p>
-            <strong>Risk:</strong> <span className="text-red-600">High</span> /{" "}
-            <span className="text-amber-600">Medium</span> / <span className="text-emerald-600">Safe</span>
+            <strong>Risk:</strong> <span className="font-semibold text-emerald-950">High</span> /{" "}
+            <span className="font-medium text-emerald-800">Medium</span> /{" "}
+            <span className="text-emerald-600">Safe</span>
           </p>
           <p>
             <strong>Zoom intelligence:</strong> zoom out for clusters + heatmap, zoom in for individual cases.

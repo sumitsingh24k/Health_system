@@ -51,7 +51,7 @@ export async function GET(request) {
 
     const response = await fetch(searchUrl.toString(), {
       headers: {
-        "User-Agent": "health-system-location-search",
+        "User-Agent": "jansetu-location-search",
       },
       cache: "no-store",
       signal: AbortSignal.timeout(8000),

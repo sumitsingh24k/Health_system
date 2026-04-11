@@ -1,4 +1,4 @@
-# Health System Backend API
+# JanSetu Backend API
 
 **How this service fits with the Next.js app and Mongo:** see [`../SYSTEM_ARCHITECTURE.md`](../SYSTEM_ARCHITECTURE.md).
 
