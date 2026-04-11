@@ -93,6 +93,16 @@ const healthDataSchema = new mongoose.Schema(
             min: 0,
             default: null,
           },
+          currentStock: {
+            type: Number,
+            min: 0,
+            default: 0,
+          },
+          incomingStock: {
+            type: Number,
+            min: 0,
+            default: 0,
+          },
         },
       ],
       default: [],
