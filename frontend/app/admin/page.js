@@ -20,8 +20,7 @@ export default function AdminDashboardPage() {
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-semibold tracking-wide text-slate-500 uppercase">Status</p>
             <p className="mt-2 text-sm text-slate-600">
-              You are signed in as an administrator. Logout is available at the bottom of the
-              sidebar.
+              You are signed in as an administrator. Sign out from the bottom of the sidebar.
             </p>
           </div>
         </div>

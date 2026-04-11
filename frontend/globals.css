@@ -14,6 +14,11 @@
   --success: #10b981;
   --danger: #ef4444;
   --muted-text: #6b7280;
+  --chart-1: oklch(0.52 0.12 160);
+  --chart-2: oklch(0.58 0.11 158);
+  --chart-3: oklch(0.45 0.09 162);
+  --chart-4: oklch(0.72 0.08 155);
+  --chart-5: oklch(0.65 0.1 157);
 }
 
 @theme inline {
@@ -40,6 +45,13 @@
   --color-accent-foreground: #064e3b;
   --color-ring: #34d399;
   --color-ring-offset-background: #f3f7f6;
+}
+
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 body {
@@ -73,6 +85,20 @@ body {
   animation: mapPulse 1.4s ease-in-out infinite;
 }
 
+.map-emoji-marker {
+  align-items: center;
+  background: #ffffff;
+  border: 2px solid #0f172a;
+  border-radius: 999px;
+  box-shadow: 0 10px 16px rgba(15, 23, 42, 0.24);
+  display: inline-flex;
+  font-size: 15px;
+  height: 30px;
+  justify-content: center;
+  line-height: 1;
+  width: 30px;
+}
+
 .map-cluster-marker {
   align-items: center;
   border: 2px solid #ffffff;
@@ -87,19 +113,93 @@ body {
   width: 36px;
 }
 
+.map-risk-ring {
+  animation: riskRingPulse 2.4s ease-in-out infinite;
+}
+
+.map-heat-wave {
+  animation: heatWaveBreath 2.8s ease-in-out infinite;
+}
+
+.map-spread-ring {
+  animation: spreadRingDash 2.2s linear infinite;
+}
+
+.map-spread-ring-soft {
+  animation: spreadRingDash 2.8s linear infinite;
+}
+
+.map-supply-route {
+  animation: supplyFlow 1.8s linear infinite;
+}
+
 @keyframes mapPulse {
   0% {
-    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.52);
+    box-shadow: 0 0 0 0 rgba(5, 150, 105, 0.45);
     transform: scale(0.9);
   }
 
   70% {
-    box-shadow: 0 0 0 10px rgba(244, 63, 94, 0);
+    box-shadow: 0 0 0 10px rgba(5, 150, 105, 0);
     transform: scale(1.06);
   }
 
   100% {
-    box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+    box-shadow: 0 0 0 0 rgba(5, 150, 105, 0);
     transform: scale(0.95);
+  }
+}
+
+@keyframes riskRingPulse {
+  0% {
+    opacity: 0.7;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.72;
+  }
+}
+
+@keyframes heatWaveBreath {
+  0% {
+    opacity: 0.52;
+  }
+
+  50% {
+    opacity: 0.9;
+  }
+
+  100% {
+    opacity: 0.56;
+  }
+}
+
+@keyframes spreadRingDash {
+  0% {
+    stroke-dashoffset: 0;
+  }
+
+  100% {
+    stroke-dashoffset: -16;
+  }
+}
+
+@keyframes supplyFlow {
+  0% {
+    stroke-dashoffset: 0;
+    opacity: 0.62;
+  }
+
+  60% {
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: -18;
+    opacity: 0.68;
   }
 }

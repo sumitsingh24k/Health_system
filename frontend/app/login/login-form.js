@@ -4,16 +4,15 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { useToast } from "@/app/components/toast-provider";
-import Button from "@/app/components/ui/button";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export default function LoginForm({ callbackUrl = "/" }) {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { toast } = useToast();
-
   async function handleSubmit(event) {
     event.preventDefault();
     setIsSubmitting(true);
@@ -27,14 +26,14 @@ export default function LoginForm({ callbackUrl = "/" }) {
       });
 
       if (result?.error) {
-        toast.error("Login failed", result.error);
+        toast.error("Login failed", { description: result.error });
         return;
       }
 
-      toast.success("Login successful", "Redirecting to your workspace");
+      toast.success("Login successful", { description: "Redirecting to your workspace" });
       router.push(result?.url || callbackUrl);
     } catch (_error) {
-      toast.error("Login failed", "Please try again.");
+      toast.error("Login failed", { description: "Please try again." });
     } finally {
       setIsSubmitting(false);
     }
@@ -49,38 +48,35 @@ export default function LoginForm({ callbackUrl = "/" }) {
         <p className="mb-2 inline-flex rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold tracking-wide text-emerald-700">
           SECURE ACCESS
         </p>
-        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
-          Health System Login
-        </h1>
-        <p className="mt-2 text-sm text-slate-600">
-          Sign in with your approved account credentials.
-        </p>
+        <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Sign in</h1>
+        <p className="mt-1 text-sm font-medium text-slate-700">JanSetu</p>
+        <p className="mt-2 text-sm text-slate-600">Use your approved account credentials.</p>
       </div>
 
       <label className="block space-y-1">
         <span className="text-sm font-medium text-slate-700">Login ID</span>
-        <input
+        <Input
           type="text"
           placeholder="admin / ASHA_001 / your email"
           value={username}
           onChange={(event) => setUsername(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none ring-emerald-200 transition focus:border-emerald-500 focus:ring"
+          className="border-slate-300 bg-white text-slate-900 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
           required
         />
       </label>
 
       <label className="block space-y-1">
         <span className="text-sm font-medium text-slate-700">Password</span>
-        <input
+        <Input
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-900 outline-none ring-emerald-200 transition focus:border-emerald-500 focus:ring"
+          className="border-slate-300 bg-white text-slate-900 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
           required
         />
       </label>
 
-      <Button type="submit" disabled={isSubmitting} className="w-full">
+      <Button type="submit" disabled={isSubmitting} className="w-full rounded-xl">
         {isSubmitting ? "Signing in..." : "Sign in"}
       </Button>
 

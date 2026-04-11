@@ -51,14 +51,22 @@ export async function GET(request) {
 
     const response = await fetch(searchUrl.toString(), {
       headers: {
-        "User-Agent": "health-system-location-search",
+        "User-Agent": "jansetu-location-search",
       },
       cache: "no-store",
       signal: AbortSignal.timeout(8000),
     });
 
     if (!response.ok) {
-      return Response.json({ message: "Location service is not reachable right now." }, { status: 502 });
+      return Response.json(
+        {
+          location: null,
+          alternatives: [],
+          message: "Location service is not reachable right now. Please enter area manually.",
+          degraded: true,
+        },
+        { status: 200 }
+      );
     }
 
     const rawResults = await response.json();
@@ -74,12 +82,25 @@ export async function GET(request) {
   } catch (error) {
     if (error?.name === "TimeoutError" || error?.name === "AbortError") {
       return Response.json(
-        { message: "Location service timed out. Please try again." },
-        { status: 504 }
+        {
+          location: null,
+          alternatives: [],
+          message: "Location service timed out. Please enter area manually and continue.",
+          degraded: true,
+        },
+        { status: 200 }
       );
     }
 
     logServerError("api/location/search", error);
-    return Response.json({ message: "Failed to search location." }, { status: 500 });
+    return Response.json(
+      {
+        location: null,
+        alternatives: [],
+        message: "Location lookup is unavailable. Please fill village and district manually.",
+        degraded: true,
+      },
+      { status: 200 }
+    );
   }
 }

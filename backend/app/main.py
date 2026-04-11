@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     mongodb.disconnect()
 
 
-app = FastAPI(title="Health System API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="JanSetu API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

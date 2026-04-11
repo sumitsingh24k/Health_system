@@ -2,15 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, MapPin, Search } from "lucide-react";
-import { useToast } from "@/app/components/toast-provider";
+import { toast } from "sonner";
 import { readApiPayload, resolveApiError } from "@/app/lib/fetch-utils";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 function toDisplayLabel(item) {
   return item.displayName || `${item.village}, ${item.district}`;
 }
 
 export default function AreaSearchFields({ value, onChange, className = "" }) {
-  const { toast } = useToast();
   const containerRef = useRef(null);
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState([]);
@@ -34,7 +35,7 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
     setShowSuggestions(false);
     setActiveIndex(-1);
     setHelperMessage("Location selected from suggestion.");
-    toast.success("Location set", toDisplayLabel(location));
+    toast.success("Location set", { description: toDisplayLabel(location) });
   }
 
   useEffect(() => {
@@ -131,7 +132,7 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
       <div className="relative">
         <div className="flex items-center rounded-xl border border-slate-300 bg-white px-3 focus-within:border-emerald-500 focus-within:ring-2 focus-within:ring-emerald-200">
           <Search size={14} className="mr-2 text-slate-500" />
-          <input
+          <Input
             placeholder="Type area (e.g. Indore, Madhya Pradesh)"
             value={query}
             onChange={(event) => {
@@ -142,7 +143,7 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
               if (suggestions.length) setShowSuggestions(true);
             }}
             onKeyDown={onInputKeyDown}
-            className="w-full bg-transparent py-2.5 text-sm outline-none"
+            className="h-auto min-h-0 w-full border-0 bg-transparent py-2.5 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
             autoComplete="off"
           />
           {isSearching ? <Loader2 size={15} className="animate-spin text-emerald-700" /> : null}
@@ -154,19 +155,20 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
               <p className="px-3 py-2 text-sm text-slate-500">No results found.</p>
             ) : (
               suggestions.map((item, index) => (
-                <button
+                <Button
                   key={`${item.latitude}-${item.longitude}-${index}`}
                   type="button"
+                  variant="ghost"
                   onClick={() => applyLocation(item)}
-                  className={`w-full rounded-lg px-3 py-2 text-left transition ${
-                    index === activeIndex ? "bg-emerald-50" : "hover:bg-slate-50"
+                  className={`h-auto w-full flex-col items-stretch gap-0.5 rounded-lg px-3 py-2 text-left font-normal ${
+                    index === activeIndex ? "bg-emerald-50 hover:bg-emerald-50" : ""
                   }`}
                 >
                   <p className="truncate text-sm font-semibold text-slate-900">{item.village}</p>
-                  <p className="truncate text-xs text-slate-500">
+                  <p className="truncate text-xs font-normal text-slate-500">
                     {item.district} - {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
                   </p>
-                </button>
+                </Button>
               ))
             )}
           </div>
@@ -176,18 +178,18 @@ export default function AreaSearchFields({ value, onChange, className = "" }) {
       <p className="text-xs text-slate-500">{helperMessage}</p>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <input
+        <Input
           placeholder="Village"
           value={value.village}
           onChange={(event) => onChange({ village: event.target.value })}
-          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
+          className="border-slate-300 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
           required
         />
-        <input
+        <Input
           placeholder="District"
           value={value.district}
           onChange={(event) => onChange({ district: event.target.value })}
-          className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring"
+          className="border-slate-300 ring-emerald-200 focus-visible:border-emerald-500 focus-visible:ring-emerald-200"
           required
         />
       </div>

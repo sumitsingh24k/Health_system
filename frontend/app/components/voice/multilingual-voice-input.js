@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Languages, Mic, MicOff } from "lucide-react";
-import { useToast } from "@/app/components/toast-provider";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 
 const LANGUAGES = [
   { code: "en-IN", label: "English (India)" },
@@ -32,7 +33,6 @@ export default function MultilingualVoiceInput({
   onTranscript,
   className = "",
 }) {
-  const { toast } = useToast();
   const recognitionRef = useRef(null);
   const [language, setLanguage] = useState("en-IN");
   const [isListening, setIsListening] = useState(false);
@@ -51,7 +51,9 @@ export default function MultilingualVoiceInput({
   function startListening() {
     const Recognition = getRecognitionConstructor();
     if (!Recognition) {
-      toast.error("Voice unavailable", "Speech recognition is not supported in this browser.");
+      toast.error("Voice unavailable", {
+        description: "Speech recognition is not supported in this browser.",
+      });
       return;
     }
 
@@ -82,7 +84,9 @@ export default function MultilingualVoiceInput({
     recognition.onerror = (event) => {
       setIsListening(false);
       if (event.error === "aborted") return;
-      toast.error("Voice input failed", event.error || "Could not process speech.");
+      toast.error("Voice input failed", {
+        description: event.error || "Could not process speech.",
+      });
     };
 
     recognition.onend = () => {
@@ -126,22 +130,24 @@ export default function MultilingualVoiceInput({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
+          size="sm"
           onClick={isListening ? stopListening : startListening}
           disabled={!isSupported}
-          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold transition ${
+          variant={isListening ? "outline" : "default"}
+          className={
             isListening
-              ? "bg-rose-600 text-white hover:bg-rose-500"
-              : "bg-slate-900 text-white hover:bg-sky-600"
-          } disabled:cursor-not-allowed disabled:opacity-60`}
+              ? "border-emerald-600 text-emerald-800 hover:bg-emerald-50"
+              : "bg-emerald-700 text-white hover:bg-emerald-600"
+          }
         >
           {isListening ? <MicOff size={13} /> : <Mic size={13} />}
           {isListening ? "Stop Voice" : "Start Voice"}
-        </button>
+        </Button>
 
         {!isSupported ? (
-          <p className="text-xs text-rose-600">
+          <p className="text-xs text-slate-600">
             Browser does not support voice input.
           </p>
         ) : null}

@@ -87,7 +87,9 @@ export function fromBackendCaseRecord(record, fallbackLocation = null) {
   };
 }
 
-export function toPredictionPayload(reports, location = {}) {
+export function toPredictionPayload(reports, rawLocation) {
+  const location =
+    rawLocation && typeof rawLocation === "object" ? rawLocation : {};
   const totalCases = reports.reduce((sum, report) => sum + (Number(report.newCases) || 0), 0);
   const diseaseCounter = reports.reduce((acc, report) => {
     const disease = normalizeString(report.disease);

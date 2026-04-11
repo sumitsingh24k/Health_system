@@ -1,6 +1,8 @@
-# Health System Frontend
+# JanSetu Frontend
 
-Next.js dashboard and role-based UI for Health System.
+Next.js dashboard and role-based UI for JanSetu.
+
+**Full-stack map (Next.js vs Python, Mongo collections, every API):** see [`../SYSTEM_ARCHITECTURE.md`](../SYSTEM_ARCHITECTURE.md).
 
 ## Environment
 
@@ -54,7 +56,7 @@ For error responses, frontend handles:
 ## UX and Theme
 
 - Global color tokens are defined in `globals.css`.
-- Shared button variants are implemented in `app/components/ui/button.js`.
+- Shared UI buttons use shadcn-style `components/ui/button.tsx` (`@/components/ui/button`).
 - Core pages (`/`, `/login`, `/workspace`, registration flows) use the unified color and button system.
 
 ## Notes
