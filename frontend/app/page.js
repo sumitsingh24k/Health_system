@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   Users,
 } from "lucide-react";
+import PublicAreaChecker from "@/app/public-area-checker";
 
 const roles = [
   {
@@ -89,8 +90,8 @@ export default function HomePage() {
           </h1>
 
           <p className="mt-5 max-w-3xl text-base leading-relaxed text-slate-600 md:text-lg">
-            Capture community health signals at source, verify data across departments, and take
-            faster district-level action through secure role-based access.
+            Detect outbreak early, predict next risk, guide medicine supply, notify people, and
+            prevent spread through one map-driven platform.
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
@@ -107,6 +108,23 @@ export default function HomePage() {
             </span>
           </div>
         </section>
+
+        <section className="grid gap-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-5 md:p-6">
+          {[
+            { key: "detect", label: "Detect", text: "ASHA and medical reports" },
+            { key: "predict", label: "Predict", text: "AI risk for next 2 days" },
+            { key: "supply", label: "Supply", text: "Medicine stock suggestions" },
+            { key: "notify", label: "Notify", text: "Role-based alerts" },
+            { key: "prevent", label: "Prevent", text: "Simple public precautions" },
+          ].map((item) => (
+            <article key={item.key} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{item.label}</p>
+              <p className="mt-1 text-sm font-semibold text-slate-900">{item.text}</p>
+            </article>
+          ))}
+        </section>
+
+        <PublicAreaChecker />
 
         <section className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
           {roles.map((role) => {
@@ -138,8 +156,8 @@ export default function HomePage() {
         <section className="rounded-[2rem] border border-slate-200 bg-slate-900 p-8 text-white md:p-10">
           <h3 className="text-2xl font-bold">How your flow works</h3>
           <p className="mt-2 max-w-3xl text-sm text-slate-300 md:text-base">
-            Admin creates ASHA users. Hospital and Medical register and wait for approval. ASHA
-            submits field reports. Hospital and Medical read only matching location data.
+            Admin sees full map and approvals. ASHA sees only area outbreak actions. Medical sees
+            demand and price comparison. Hospital sees patient load prediction.
           </p>
         </section>
       </main>

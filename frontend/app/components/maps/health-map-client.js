@@ -1,11 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import L from "leaflet";
 import {
   Circle,
   MapContainer,
   Marker,
+  Pane,
+  Polyline,
   Popup,
   TileLayer,
   Tooltip,
@@ -91,7 +93,7 @@ function matchesRoleScope(location, role, userLocation) {
   const districtMatch =
     normalizeText(location?.district) === normalizeText(userLocation?.district);
 
-  if (role === "HOSPITAL") {
+  if (role === "HOSPITAL" || role === "MEDICAL") {
     return districtMatch;
   }
 
@@ -107,6 +109,74 @@ function createMarkerIcon({ label, color, pulse = false }) {
     popupAnchor: [0, -12],
     html: `<span class="map-smart-marker ${pulse ? "map-smart-marker-pulse" : ""}" style="background:${color};">${label}</span>`,
   });
+}
+
+function createEmojiIcon({ emoji, borderColor }) {
+  return L.divIcon({
+    className: "",
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+    popupAnchor: [0, -12],
+    html: `<span class="map-emoji-marker" style="border-color:${borderColor};">${emoji}</span>`,
+  });
+}
+
+function buildSimpleAction(zone) {
+  if (!zone) {
+    return "Select any area to see action guidance.";
+  }
+
+  if (zone.riskLevel === "HIGH_RISK") {
+    return "High Risk Area: activate field awareness visits and prepare nearby hospitals now.";
+  }
+
+  if (zone.riskLevel === "MEDIUM_RISK") {
+    return "Watch zone closely: monitor fever trend and keep medicine stock ready.";
+  }
+
+  return "Safe Zone: continue regular surveillance and preventive awareness.";
+}
+
+function toPercent(value) {
+  if (!Number.isFinite(value)) return "N/A";
+  return `${Math.round(value * 100)}%`;
+}
+
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function toDistanceKm(lat1, lon1, lat2, lon2) {
+  if (
+    !Number.isFinite(lat1) ||
+    !Number.isFinite(lon1) ||
+    !Number.isFinite(lat2) ||
+    !Number.isFinite(lon2)
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function resolveAvailability(expectedUnits) {
+  if (!Number.isFinite(expectedUnits)) return "Unknown";
+  if (expectedUnits >= 150) return "High";
+  if (expectedUnits >= 70) return "Medium";
+  return "Low";
+}
+
+function resolveTrendLabel(growthPercent) {
+  if (!Number.isFinite(growthPercent)) return "Stable";
+  if (growthPercent >= 12) return "Increasing";
+  if (growthPercent <= -8) return "Decreasing";
+  return "Stable";
 }
 
 function createClusterIcon(cluster) {
@@ -179,7 +249,7 @@ function buildClusters(points, zoom) {
   });
 }
 
-function BuildMapState({ points, role, userLocation, selectedRegion, onZoomChange }) {
+function BuildMapState({ points, role, userLocation, selectedRegion, onZoomChange, onMapReady }) {
   const map = useMap();
 
   useMapEvents({
@@ -192,6 +262,11 @@ function BuildMapState({ points, role, userLocation, selectedRegion, onZoomChang
     const timer = window.setTimeout(() => map.invalidateSize(), 120);
     return () => window.clearTimeout(timer);
   }, [map]);
+
+  useEffect(() => {
+    onMapReady?.(map);
+    return () => onMapReady?.(null);
+  }, [map, onMapReady]);
 
   useEffect(() => {
     if (
@@ -237,16 +312,27 @@ export default function HealthMapClient({
   userLocation = null,
   selectedRegion = null,
   onRegionSelect = null,
+  selectedZoneInsight = null,
+  nearbyRiskZones = [],
+  aiInsights = [],
+  supplyRoutes = [],
+  pharmacies = [],
+  medicineDemand = [],
 }) {
+  const [mapInstance, setMapInstance] = useState(null);
   const [zoomLevel, setZoomLevel] = useState(MAP_BY_ROLE[role]?.zoom || 6);
   const [baseMap, setBaseMap] = useState(MAPBOX_TOKEN ? "mapbox_streets" : "voyager");
   const [layers, setLayers] = useState({
+    outbreakZones: true,
+    riskLabels: true,
+    medicalStores: true,
+    janaushadhi: true,
+    hospitals: true,
     heatmap: true,
     markers: true,
     clusters: true,
-    risk: true,
     ashaWorkers: true,
-    hospitals: true,
+    supply: true,
   });
 
   const caseIcons = useMemo(
@@ -257,9 +343,11 @@ export default function HealthMapClient({
       HIGH_NEW: createMarkerIcon({ label: "P", color: "#dc2626", pulse: true }),
       MEDIUM_NEW: createMarkerIcon({ label: "P", color: "#f59e0b", pulse: true }),
       LOW_NEW: createMarkerIcon({ label: "P", color: "#16a34a", pulse: true }),
-      ASHA: createMarkerIcon({ label: "A", color: "#db2777" }),
-      HOSPITAL: createMarkerIcon({ label: "H", color: "#2563eb" }),
-      MEDICAL: createMarkerIcon({ label: "M", color: "#0d9488" }),
+      ASHA: createEmojiIcon({ emoji: "\ud83d\udc69\u200d\u2695\ufe0f", borderColor: "#db2777" }),
+      HOSPITAL: createEmojiIcon({ emoji: "\ud83c\udfe5", borderColor: "#2563eb" }),
+      MEDICAL: createEmojiIcon({ emoji: "\ud83d\udc8a", borderColor: "#0d9488" }),
+      PHARMACY: createEmojiIcon({ emoji: "\ud83d\udc8a", borderColor: "#0284c7" }),
+      JANAUSHADHI: createEmojiIcon({ emoji: "\ud83c\udfea", borderColor: "#059669" }),
     }),
     []
   );
@@ -288,6 +376,36 @@ export default function HealthMapClient({
       .filter((point) => matchesRoleScope(point?.location, role, userLocation))
       .filter(Boolean);
   }, [reports, role, userLocation]);
+  const pharmacyPoints = useMemo(
+    () =>
+      (Array.isArray(pharmacies) ? pharmacies : [])
+        .filter((entry) => Number.isFinite(entry?.latitude) && Number.isFinite(entry?.longitude))
+        .map((entry) => ({
+          ...entry,
+          district: entry?.district || selectedRegion?.district || null,
+          village: entry?.village || selectedRegion?.village || null,
+        })),
+    [pharmacies, selectedRegion?.district, selectedRegion?.village]
+  );
+  const scopedPharmacyPoints = useMemo(
+    () =>
+      pharmacyPoints.filter((entry) =>
+        matchesRoleScope(
+          { district: entry?.district, village: entry?.village },
+          role,
+          userLocation
+        )
+      ),
+    [pharmacyPoints, role, userLocation]
+  );
+  const privatePharmacyPoints = useMemo(
+    () => scopedPharmacyPoints.filter((entry) => entry.type !== "JANAUSHADHI"),
+    [scopedPharmacyPoints]
+  );
+  const janaushadhiPoints = useMemo(
+    () => scopedPharmacyPoints.filter((entry) => entry.type === "JANAUSHADHI"),
+    [scopedPharmacyPoints]
+  );
 
   const mapPoints = useMemo(() => {
     const points = casePoints.map((point) => [point.latitude, point.longitude]);
@@ -307,8 +425,21 @@ export default function HealthMapClient({
       }
     }
 
+    for (const pharmacy of scopedPharmacyPoints) {
+      points.push([pharmacy.latitude, pharmacy.longitude]);
+    }
+
+    for (const route of Array.isArray(supplyRoutes) ? supplyRoutes : []) {
+      if (Number.isFinite(route?.from?.latitude) && Number.isFinite(route?.from?.longitude)) {
+        points.push([route.from.latitude, route.from.longitude]);
+      }
+      if (Number.isFinite(route?.to?.latitude) && Number.isFinite(route?.to?.longitude)) {
+        points.push([route.to.latitude, route.to.longitude]);
+      }
+    }
+
     return points;
-  }, [casePoints, entities, role, userLocation]);
+  }, [casePoints, entities, role, scopedPharmacyPoints, supplyRoutes, userLocation]);
 
   const clusters = useMemo(() => buildClusters(casePoints, zoomLevel), [casePoints, zoomLevel]);
 
@@ -352,7 +483,7 @@ export default function HealthMapClient({
 
   const showClusters = layers.clusters && zoomLevel <= 7;
   const showIndividualCases = layers.markers && zoomLevel >= 7;
-  const showHeatmap = layers.heatmap && zoomLevel <= 9;
+  const showHeatmap = layers.heatmap && layers.outbreakZones && zoomLevel <= 9;
 
   const ashaWorkers = useMemo(
     () =>
@@ -376,6 +507,166 @@ export default function HealthMapClient({
     [entities, role, userLocation]
   );
 
+  const selectedZone = useMemo(() => {
+    if (selectedZoneInsight && Number.isFinite(selectedZoneInsight?.latitude) && Number.isFinite(selectedZoneInsight?.longitude)) {
+      return selectedZoneInsight;
+    }
+
+    if (!selectedRegion?.district) return null;
+    return (
+      scopedRiskZones.find(
+        (zone) =>
+          normalizeText(zone?.district) === normalizeText(selectedRegion?.district) &&
+          normalizeText(zone?.village) === normalizeText(selectedRegion?.village)
+      ) || null
+    );
+  }, [scopedRiskZones, selectedRegion?.district, selectedRegion?.village, selectedZoneInsight]);
+
+  const nearbyZonesForPanel = useMemo(() => {
+    if (Array.isArray(nearbyRiskZones) && nearbyRiskZones.length) {
+      return nearbyRiskZones.slice(0, 3);
+    }
+
+    if (!selectedZone) return [];
+
+    return scopedRiskZones
+      .filter((zone) => zone.id !== selectedZone.id && normalizeText(zone?.district) === normalizeText(selectedZone?.district))
+      .sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))
+      .slice(0, 3);
+  }, [nearbyRiskZones, scopedRiskZones, selectedZone]);
+
+  const mapInsightLines = useMemo(() => {
+    const hints = Array.isArray(aiInsights) ? aiInsights : [];
+    if (hints.length) {
+      return hints.slice(0, 2);
+    }
+
+    if (!selectedZone) return [];
+    return [
+      selectedZone.riskLevel === "HIGH_RISK"
+        ? "AI Insight: This area is becoming a hotspot."
+        : "AI Insight: This zone is currently stable.",
+      "Why: Case trend and field reports are driving this score.",
+    ];
+  }, [aiInsights, selectedZone]);
+  const selectedCenter = useMemo(
+    () => ({
+      latitude: Number(selectedZone?.latitude),
+      longitude: Number(selectedZone?.longitude),
+    }),
+    [selectedZone?.latitude, selectedZone?.longitude]
+  );
+
+  const nearbyHospitalsForPanel = useMemo(() => {
+    if (!Number.isFinite(selectedCenter.latitude) || !Number.isFinite(selectedCenter.longitude)) {
+      return [];
+    }
+
+    return [...hospitals, ...medicalTeams]
+      .map((entry) => {
+        const latitude = Number(entry?.location?.latitude);
+        const longitude = Number(entry?.location?.longitude);
+        const distanceKm = toDistanceKm(
+          selectedCenter.latitude,
+          selectedCenter.longitude,
+          latitude,
+          longitude
+        );
+        if (!Number.isFinite(distanceKm)) return null;
+        return {
+          id: entry.id,
+          name: entry.name,
+          role: entry.role,
+          distanceKm,
+          district: entry?.location?.district || null,
+          village: entry?.location?.village || null,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice(0, 3);
+  }, [hospitals, medicalTeams, selectedCenter.latitude, selectedCenter.longitude]);
+
+  const nearbyJanaushadhiForPanel = useMemo(() => {
+    if (!Number.isFinite(selectedCenter.latitude) || !Number.isFinite(selectedCenter.longitude)) {
+      return janaushadhiPoints.slice(0, 3);
+    }
+
+    return janaushadhiPoints
+      .map((entry) => ({
+        ...entry,
+        distanceFromZoneKm: toDistanceKm(
+          selectedCenter.latitude,
+          selectedCenter.longitude,
+          Number(entry.latitude),
+          Number(entry.longitude)
+        ),
+      }))
+      .sort((a, b) => a.distanceFromZoneKm - b.distanceFromZoneKm)
+      .slice(0, 3);
+  }, [janaushadhiPoints, selectedCenter.latitude, selectedCenter.longitude]);
+
+  const nearbyPrivateForPanel = useMemo(() => {
+    if (!Number.isFinite(selectedCenter.latitude) || !Number.isFinite(selectedCenter.longitude)) {
+      return privatePharmacyPoints.slice(0, 3);
+    }
+
+    return privatePharmacyPoints
+      .map((entry) => ({
+        ...entry,
+        distanceFromZoneKm: toDistanceKm(
+          selectedCenter.latitude,
+          selectedCenter.longitude,
+          Number(entry.latitude),
+          Number(entry.longitude)
+        ),
+      }))
+      .sort((a, b) => a.distanceFromZoneKm - b.distanceFromZoneKm)
+      .slice(0, 3);
+  }, [privatePharmacyPoints, selectedCenter.latitude, selectedCenter.longitude]);
+
+  const medicineAvailabilityForPanel = useMemo(
+    () =>
+      (Array.isArray(medicineDemand) ? medicineDemand : []).slice(0, 4).map((item) => ({
+        medicine: item?.medicine || "Unknown",
+        expectedUnitsNext3Days: Number(item?.expectedUnitsNext3Days) || 0,
+        availability: resolveAvailability(Number(item?.expectedUnitsNext3Days)),
+      })),
+    [medicineDemand]
+  );
+
+  const predictionLine = useMemo(() => {
+    if (!selectedZone) return "AI Prediction: select an area for next-2-day risk prediction.";
+    const probability = Number(selectedZone?.outbreakProbabilityNext3Days) || 0;
+    if (probability >= 0.6) return "AI Prediction: risk will increase in next 2 days.";
+    if (probability >= 0.4) return "AI Prediction: area is under watch for next 2 days.";
+    return "AI Prediction: risk is likely stable in next 2 days.";
+  }, [selectedZone]);
+
+  const focusVillage = useCallback(() => {
+    if (!mapInstance) return;
+    const latitude = Number(selectedRegion?.latitude ?? selectedZone?.latitude ?? userLocation?.latitude);
+    const longitude = Number(selectedRegion?.longitude ?? selectedZone?.longitude ?? userLocation?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    mapInstance.flyTo([latitude, longitude], 10, { duration: 0.8 });
+  }, [mapInstance, selectedRegion?.latitude, selectedRegion?.longitude, selectedZone?.latitude, selectedZone?.longitude, userLocation?.latitude, userLocation?.longitude]);
+
+  const focusDistrict = useCallback(() => {
+    if (!mapInstance) return;
+    const latitude = Number(selectedRegion?.latitude ?? selectedZone?.latitude ?? userLocation?.latitude);
+    const longitude = Number(selectedRegion?.longitude ?? selectedZone?.longitude ?? userLocation?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      mapInstance.flyTo(INDIA_CENTER, 6, { duration: 0.8 });
+      return;
+    }
+    mapInstance.flyTo([latitude, longitude], 8, { duration: 0.8 });
+  }, [mapInstance, selectedRegion?.latitude, selectedRegion?.longitude, selectedZone?.latitude, selectedZone?.longitude, userLocation?.latitude, userLocation?.longitude]);
+
+  const focusState = useCallback(() => {
+    if (!mapInstance) return;
+    mapInstance.flyTo(INDIA_CENTER, 5, { duration: 0.9 });
+  }, [mapInstance]);
+
   const baseMapOptions = useMemo(() => {
     const defaults = [BASEMAPS.voyager, BASEMAPS.osm];
     if (!MAPBOX_TOKEN) return defaults;
@@ -398,6 +689,7 @@ export default function HealthMapClient({
           userLocation={userLocation}
           selectedRegion={selectedRegion}
           onZoomChange={setZoomLevel}
+          onMapReady={setMapInstance}
         />
 
         {role === "ASHA" &&
@@ -420,12 +712,13 @@ export default function HealthMapClient({
           </Circle>
         ) : null}
 
-        {layers.risk
+        {layers.outbreakZones
           ? scopedRiskZones.map((zone) => (
               <Circle
                 key={`risk-${zone.id}`}
                 center={[zone.latitude, zone.longitude]}
                 radius={zone.radiusMeters || 6000}
+                className="map-risk-ring"
                 pathOptions={{
                   color: zone.riskColor || "#f59e0b",
                   fillColor: zone.riskColor || "#f59e0b",
@@ -447,7 +740,7 @@ export default function HealthMapClient({
                   },
                 }}
               >
-                <Tooltip direction="center" permanent={zoomLevel >= 7}>
+                <Tooltip direction="center" permanent={layers.riskLabels && zoomLevel >= 7}>
                   <span className="text-[10px] font-bold">{resolveRiskLabel(zone.riskLevel)}</span>
                 </Tooltip>
                 <Popup>
@@ -493,6 +786,7 @@ export default function HealthMapClient({
                     key={`heat-${zone.id}`}
                     center={[zone.latitude, zone.longitude]}
                     radius={radius}
+                    className="map-heat-wave"
                     pathOptions={{
                       stroke: false,
                       fillColor: riskColor,
@@ -504,6 +798,7 @@ export default function HealthMapClient({
                       key={`spread-${zone.id}`}
                       center={[zone.latitude, zone.longitude]}
                       radius={Math.max(radius * 1.35, 5600)}
+                      className="map-spread-ring"
                       pathOptions={{
                         color: "#dc2626",
                         fillOpacity: 0,
@@ -511,10 +806,58 @@ export default function HealthMapClient({
                         dashArray: "8 8",
                       }}
                     />
+                  ) : zone.riskLevel === "MEDIUM_RISK" ? (
+                    <Circle
+                      key={`spread-medium-${zone.id}`}
+                      center={[zone.latitude, zone.longitude]}
+                      radius={Math.max(radius * 1.2, 4600)}
+                      className="map-spread-ring-soft"
+                      pathOptions={{
+                        color: "#f59e0b",
+                        fillOpacity: 0,
+                        weight: 1.6,
+                        dashArray: "6 8",
+                      }}
+                    />
                   ) : null}
                 </Fragment>
               );
             })
+          : null}
+
+        {layers.supply && Array.isArray(supplyRoutes)
+          ? supplyRoutes
+              .filter(
+                (route) =>
+                  Number.isFinite(route?.from?.latitude) &&
+                  Number.isFinite(route?.from?.longitude) &&
+                  Number.isFinite(route?.to?.latitude) &&
+                  Number.isFinite(route?.to?.longitude)
+              )
+              .map((route, index) => (
+                <Pane key={`supply-${index}`} name={`supply-${index}`} style={{ zIndex: 520 }}>
+                  <Polyline
+                    positions={[
+                      [route.from.latitude, route.from.longitude],
+                      [route.to.latitude, route.to.longitude],
+                    ]}
+                    className="map-supply-route"
+                    pathOptions={{
+                      color: "#06b6d4",
+                      weight: 3,
+                      opacity: 0.95,
+                      dashArray: "9 9",
+                    }}
+                  >
+                    <Tooltip direction="top" sticky>
+                      <p className="text-[11px] font-semibold">Supply Action Recommended</p>
+                      <p className="text-[11px]">
+                        {route.label || "Stock flow from Janaushadhi to risk zone"}
+                      </p>
+                    </Tooltip>
+                  </Polyline>
+                </Pane>
+              ))
           : null}
 
         {showClusters
@@ -673,9 +1016,61 @@ export default function HealthMapClient({
                 </Marker>
               ))
           : null}
+
+        {layers.medicalStores
+          ? privatePharmacyPoints.map((entry) => (
+              <Marker
+                key={`private-pharmacy-${entry.id}`}
+                position={[entry.latitude, entry.longitude]}
+                icon={caseIcons.PHARMACY}
+              >
+                <Popup>
+                  <div className="space-y-1 text-sm">
+                    <p className="font-bold text-slate-900">Medical Store</p>
+                    <p>
+                      <strong>Name:</strong> {entry.name}
+                    </p>
+                    <p>
+                      <strong>Distance:</strong>{" "}
+                      {Number.isFinite(entry.distanceKm) ? `${entry.distanceKm} km` : "N/A"}
+                    </p>
+                    <p>
+                      <strong>Address:</strong> {entry.address || "Not available"}
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))
+          : null}
+
+        {layers.janaushadhi
+          ? janaushadhiPoints.map((entry) => (
+              <Marker
+                key={`janaushadhi-${entry.id}`}
+                position={[entry.latitude, entry.longitude]}
+                icon={caseIcons.JANAUSHADHI}
+              >
+                <Popup>
+                  <div className="space-y-1 text-sm">
+                    <p className="font-bold text-slate-900">Janaushadhi Center</p>
+                    <p>
+                      <strong>Name:</strong> {entry.name}
+                    </p>
+                    <p>
+                      <strong>Distance:</strong>{" "}
+                      {Number.isFinite(entry.distanceKm) ? `${entry.distanceKm} km` : "N/A"}
+                    </p>
+                    <p>
+                      <strong>Address:</strong> {entry.address || "Not available"}
+                    </p>
+                  </div>
+                </Popup>
+              </Marker>
+            ))
+          : null}
       </MapContainer>
 
-      <div className="absolute left-3 top-3 z-[600] w-[260px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
+      <div className="absolute left-3 top-3 z-[600] w-[290px] rounded-2xl border border-slate-200 bg-white/95 p-3 text-xs shadow-lg backdrop-blur">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-700">Map Layers</p>
         <label className="mt-2 block space-y-1">
           <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">
@@ -696,12 +1091,58 @@ export default function HealthMapClient({
 
         <div className="mt-2 grid grid-cols-2 gap-2 text-slate-700">
           {[
+            {
+              key: "outbreakZones",
+              label: "Show Outbreak Zones",
+              tooltip: "Risk circles for outbreak zones",
+            },
+            {
+              key: "medicalStores",
+              label: "Show Medical Stores",
+              tooltip: "Private pharmacy markers",
+            },
+            {
+              key: "janaushadhi",
+              label: "Show Janaushadhi",
+              tooltip: "Affordable Janaushadhi centers",
+            },
+            {
+              key: "hospitals",
+              label: "Show Hospitals",
+              tooltip: "Hospitals and approved medical teams",
+            },
+            {
+              key: "riskLabels",
+              label: "Show Risk Level",
+              tooltip: "Display HIGH/MEDIUM/SAFE labels",
+            },
+          ].map((item) => (
+            <label
+              key={item.key}
+              title={item.tooltip}
+              className="inline-flex cursor-pointer items-center gap-1.5"
+            >
+              <input
+                type="checkbox"
+                checked={layers[item.key]}
+                onChange={(event) =>
+                  setLayers((current) => ({
+                    ...current,
+                    [item.key]: event.target.checked,
+                  }))
+                }
+              />
+              <span>{item.label}</span>
+            </label>
+          ))}
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 text-slate-700">
+          {[
             { key: "heatmap", label: "Heatmap" },
             { key: "markers", label: "Case Markers" },
             { key: "clusters", label: "Clusters" },
-            { key: "risk", label: "Risk Areas" },
             { key: "ashaWorkers", label: "ASHA" },
-            { key: "hospitals", label: "Hospitals" },
+            { key: "supply", label: "Supply Flow" },
           ].map((item) => (
             <label key={item.key} className="inline-flex cursor-pointer items-center gap-1.5">
               <input
@@ -718,24 +1159,199 @@ export default function HealthMapClient({
             </label>
           ))}
         </div>
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={focusVillage}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Village
+          </button>
+          <button
+            type="button"
+            onClick={focusDistrict}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            District
+          </button>
+          <button
+            type="button"
+            onClick={focusState}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            State
+          </button>
+        </div>
         <div className="mt-3 space-y-1 text-[11px] text-slate-600">
           <p>
-            <strong>Risk:</strong> <span className="text-red-600">High</span> /{" "}
-            <span className="text-amber-600">Medium</span> / <span className="text-emerald-600">Safe</span>
+            <strong>Smart legend:</strong> Red = High Risk Area, Yellow = Watch Zone, Green = Safe Zone
           </p>
           <p>
-            <strong>Zoom intelligence:</strong> zoom out for clusters + heatmap, zoom in for individual cases.
+            <strong>Spread story:</strong> ripple rings show where outbreak can expand in nearby days.
+          </p>
+          <p>
+            <strong>Icons:</strong> ASHA | Medical stores | Hospitals | Janaushadhi
           </p>
           <p>
             <strong>Selected role view:</strong> {role}
           </p>
           {!MAPBOX_TOKEN ? (
             <p>
-              <strong>Tip:</strong> add <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> for Mapbox layers.
+              <strong>Mapbox optional:</strong> add <code>NEXT_PUBLIC_MAPBOX_TOKEN</code> for Mapbox styles.
             </p>
           ) : null}
         </div>
       </div>
+
+      {selectedZone ? (
+        <aside className="absolute bottom-3 right-3 z-[620] w-[min(360px,calc(100%-1.5rem))] rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur">
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+            Area Story Panel
+          </p>
+          <h3 className="mt-1 text-sm font-bold text-slate-900">
+            {selectedZone.village || "Selected area"}, {selectedZone.district || "District"}
+          </h3>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="text-slate-500">Risk Level</p>
+              <p className="text-base font-bold text-rose-600">{resolveRiskLabel(selectedZone.riskLevel)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="text-slate-500">Risk Score</p>
+              <p className="text-base font-bold text-rose-600">{selectedZone.riskScore || 0}/100</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="text-slate-500">Outbreak Probability</p>
+              <p className="text-base font-bold text-amber-600">{toPercent(selectedZone.outbreakProbabilityNext3Days)}</p>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+              <p className="text-slate-500">Total Cases</p>
+              <p className="text-base font-bold text-sky-700">{selectedZone.newCases || 0}</p>
+            </div>
+          </div>
+
+          <div className="mt-2 rounded-lg border border-cyan-100 bg-cyan-50 px-2 py-2 text-xs text-cyan-900">
+            <p className="font-semibold">Recommended action</p>
+            <p className="mt-0.5">{buildSimpleAction(selectedZone)}</p>
+          </div>
+          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-xs text-slate-700">
+            <p>
+              <strong>Trend:</strong> {resolveTrendLabel(selectedZone?.growthPercent)}
+            </p>
+          </div>
+          <div className="mt-2 rounded-lg border border-amber-100 bg-amber-50 px-2 py-2 text-xs text-amber-900">
+            <p className="font-semibold">{predictionLine}</p>
+          </div>
+
+          <div className="mt-2 space-y-1 text-xs text-slate-700">
+            {mapInsightLines.map((line, index) => (
+              <p key={`${line}-${index}`} className="rounded-md bg-slate-50 px-2 py-1">
+                {line}
+              </p>
+            ))}
+          </div>
+
+          <div className="mt-2 grid gap-2 md:grid-cols-2">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Nearby Janaushadhi
+              </p>
+              {nearbyJanaushadhiForPanel.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">No nearby centers</p>
+              ) : (
+                nearbyJanaushadhiForPanel.map((entry) => (
+                  <p key={`panel-j-${entry.id}`} className="mt-1 text-xs text-slate-700">
+                    {entry.name}
+                  </p>
+                ))
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Nearby Stores
+              </p>
+              {nearbyPrivateForPanel.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">No nearby stores</p>
+              ) : (
+                nearbyPrivateForPanel.map((entry) => (
+                  <p key={`panel-p-${entry.id}`} className="mt-1 text-xs text-slate-700">
+                    {entry.name}
+                  </p>
+                ))
+              )}
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 md:col-span-2">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                Nearby Hospitals
+              </p>
+              {nearbyHospitalsForPanel.length === 0 ? (
+                <p className="mt-1 text-xs text-slate-500">No nearby hospitals</p>
+              ) : (
+                nearbyHospitalsForPanel.map((entry) => (
+                  <p key={`panel-h-${entry.id}`} className="mt-1 text-xs text-slate-700">
+                    {entry.name} ({entry.distanceKm.toFixed(1)} km)
+                  </p>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="mt-2 rounded-lg border border-slate-200 bg-white px-2 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Medicine Availability
+            </p>
+            {medicineAvailabilityForPanel.length === 0 ? (
+              <p className="mt-1 text-xs text-slate-500">No medicine trend available for this area.</p>
+            ) : (
+              <div className="mt-1 space-y-1">
+                {medicineAvailabilityForPanel.map((entry) => (
+                  <div
+                    key={`med-${entry.medicine}`}
+                    className="flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs"
+                  >
+                    <span className="font-medium text-slate-800">{entry.medicine}</span>
+                    <span className="font-semibold text-slate-700">
+                      {entry.expectedUnitsNext3Days} units ({entry.availability})
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              Nearby risk zones
+            </p>
+            {nearbyZonesForPanel.length === 0 ? (
+              <p className="mt-1 text-xs text-slate-500">No nearby zones with higher risk.</p>
+            ) : (
+              <div className="mt-1 space-y-1">
+                {nearbyZonesForPanel.map((zone) => (
+                  <button
+                    key={`nearby-${zone.id}`}
+                    type="button"
+                    onClick={() =>
+                      onRegionSelect?.({
+                        district: zone.district,
+                        village: zone.village,
+                        latitude: zone.latitude,
+                        longitude: zone.longitude,
+                      })
+                    }
+                    className="flex w-full items-center justify-between rounded-md border border-slate-200 px-2 py-1 text-left text-xs transition hover:bg-slate-50"
+                  >
+                    <span className="font-medium text-slate-800">
+                      {zone.village}, {zone.district}
+                    </span>
+                    <span className="font-semibold text-rose-600">{zone.riskScore || 0}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+      ) : null}
 
       {!mapPoints.length ? (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl border border-slate-200 bg-white/90 px-3 py-2 text-xs text-slate-600 shadow">

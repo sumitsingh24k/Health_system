@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import {
   Activity,
+  AlertTriangle,
   Building2,
   CheckCircle2,
   Clock3,
@@ -11,16 +12,19 @@ import {
   Crosshair,
   LocateFixed,
   LogOut,
+  Mail,
   MapPin,
+  MessageCircle,
+  Navigation,
   ShieldCheck,
   Stethoscope,
+  Store,
   UserCheck,
   Users,
 } from "lucide-react";
 import HealthMap from "@/app/components/maps/health-map";
 import { useToast } from "@/app/components/toast-provider";
 import AreaSearchFields from "@/app/components/location/area-search-fields";
-import MultilingualVoiceInput from "@/app/components/voice/multilingual-voice-input";
 import { readApiPayload, resolveApiError } from "@/app/lib/fetch-utils";
 
 function RoleBadge({ role }) {
@@ -115,6 +119,23 @@ function formatDistance(distanceKm) {
   return distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m away` : `${distanceKm.toFixed(1)} km away`;
 }
 
+function formatCoordinate(value) {
+  if (!Number.isFinite(value)) return "--";
+  return value.toFixed(5);
+}
+
+function formatMoney(value) {
+  if (!Number.isFinite(value)) return "--";
+  return `Rs ${value.toFixed(2)}`;
+}
+
+function resolveDemandSignal(expectedUnits) {
+  if (!Number.isFinite(expectedUnits)) return "Low";
+  if (expectedUnits >= 180) return "Demand increasing";
+  if (expectedUnits >= 80) return "Stable";
+  return "Low";
+}
+
 function parseMedicineSalesText(input) {
   if (!input || typeof input !== "string") return [];
 
@@ -123,13 +144,27 @@ function parseMedicineSalesText(input) {
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
-      const [medicineRaw, unitsRaw, priceRaw, benchmarkRaw] = line.split(",").map((item) => item.trim());
+      const [medicineRaw, unitsRaw, priceRaw, benchmarkRaw, stockRaw, incomingRaw] = line
+        .split(",")
+        .map((item) => item.trim());
       const unitsSold = Number(unitsRaw);
       const unitPrice = Number(priceRaw);
       const benchmarkPrice =
         benchmarkRaw === undefined || benchmarkRaw === "" ? null : Number(benchmarkRaw);
+      const currentStock = stockRaw === undefined || stockRaw === "" ? 0 : Number(stockRaw);
+      const incomingStock = incomingRaw === undefined || incomingRaw === "" ? 0 : Number(incomingRaw);
 
-      if (!medicineRaw || !Number.isFinite(unitsSold) || unitsSold < 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+      if (
+        !medicineRaw ||
+        !Number.isFinite(unitsSold) ||
+        unitsSold < 0 ||
+        !Number.isFinite(unitPrice) ||
+        unitPrice < 0 ||
+        !Number.isFinite(currentStock) ||
+        currentStock < 0 ||
+        !Number.isFinite(incomingStock) ||
+        incomingStock < 0
+      ) {
         return null;
       }
 
@@ -141,6 +176,8 @@ function parseMedicineSalesText(input) {
           benchmarkPrice === null || !Number.isFinite(benchmarkPrice) || benchmarkPrice < 0
             ? null
             : Number(benchmarkPrice.toFixed(2)),
+        currentStock: Math.round(currentStock),
+        incomingStock: Math.round(incomingStock),
       };
     })
     .filter(Boolean);
@@ -148,8 +185,13 @@ function parseMedicineSalesText(input) {
 
 function AdminSidebar({ pendingCount, alertCount, mismatchCount, priceFlags }) {
   const links = [
+    { href: "#quick-capture", label: "Quick Capture" },
     { href: "#admin-create-asha", label: "Create ASHA" },
     { href: "#admin-filters", label: "Filters" },
+    { href: "#ai-command-center", label: "AI Center" },
+    { href: "#ai-decision-panel", label: "AI Panel" },
+    { href: "#janaushadhi-intel", label: "Janaushadhi" },
+    { href: "#automation-hub", label: "Automation" },
     { href: "#admin-memory", label: "ASHA Memory" },
     { href: "#admin-approvals", label: "Approvals" },
     { href: "#outbreak-map", label: "Map" },
@@ -184,10 +226,54 @@ function AdminSidebar({ pendingCount, alertCount, mismatchCount, priceFlags }) {
   );
 }
 
+function RoleSidebar({ role, canSubmitReports, canSeeLocationInsight, canSeeAiPanel }) {
+  const links = [
+    { href: "#quick-capture", label: "Quick Capture" },
+    { href: "#outbreak-map", label: "Map" },
+    { href: "#ai-command-center", label: "AI Center" },
+    { href: "#janaushadhi-intel", label: "Janaushadhi" },
+    { href: "#recent-reports", label: "Reports" },
+  ];
+
+  if (canSubmitReports) {
+    links.unshift({ href: "#field-report", label: "Submit Report" });
+  }
+
+  if (canSeeLocationInsight) {
+    links.push({ href: "#role-insight", label: "Area Insight" });
+  }
+
+  if (canSeeAiPanel) {
+    links.push({ href: "#ai-decision-panel", label: "AI Panel" });
+  }
+
+  return (
+    <aside className="hidden rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:block xl:sticky xl:top-6 xl:h-fit">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{role} Sidebar</p>
+      <div className="mt-2 grid gap-2">
+        {links.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+      <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+        App + WhatsApp + GPS flow keeps area updates simple for field teams.
+      </p>
+    </aside>
+  );
+}
+
 function BottomRoleDock({ role, canSubmitReports, canSeeLocationInsight, canSeeAiPanel }) {
   const links = [
     { href: "#outbreak-map", label: "Map" },
     { href: "#recent-reports", label: "Reports" },
+    { href: "#ai-command-center", label: "AI Hub" },
+    { href: "#janaushadhi-intel", label: "Meds" },
   ];
 
   if (canSubmitReports) {
@@ -261,9 +347,41 @@ export default function WorkspaceClient({ user }) {
   });
   const [dailyTrend, setDailyTrend] = useState([]);
   const [diseaseDistribution, setDiseaseDistribution] = useState([]);
+  const [roleActions, setRoleActions] = useState([]);
+  const [decisionCenter, setDecisionCenter] = useState({
+    statusPills: {
+      risk: "Risk Under Watch",
+      demand: "Demand Watch",
+      supply: "Stock Check",
+      price: "Price Normal",
+    },
+    supplyPlan: {
+      medicine: "Paracetamol",
+      requiredUnitsNext48Hours: 0,
+    },
+    priceSignal: {
+      decision: "Price Normal",
+      savingsEstimate: 0,
+    },
+    recommendedActions: [],
+  });
+  const [roleDecisionPack, setRoleDecisionPack] = useState({
+    primaryDecision: "Risk Under Watch",
+    secondaryDecision: "Stock Check",
+    tasks: [],
+  });
+  const [responseMeta, setResponseMeta] = useState({
+    roleScope: "",
+    locationWindow: null,
+    outbreakAutomation: null,
+  });
   const [isCreatingAsha, setIsCreatingAsha] = useState(false);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [isLoadingJanaushadhi, setIsLoadingJanaushadhi] = useState(false);
   const [approvingUserId, setApprovingUserId] = useState("");
+  const [areaRadiusKm, setAreaRadiusKm] = useState(
+    user.role === "HOSPITAL" || user.role === "MEDICAL" ? "18" : ""
+  );
   const [createAshaForm, setCreateAshaForm] = useState({
     name: "",
     email: "",
@@ -302,11 +420,25 @@ export default function WorkspaceClient({ user }) {
     },
   });
   const [isLoadingAshaDirectory, setIsLoadingAshaDirectory] = useState(false);
+  const [janaushadhiSearch, setJanaushadhiSearch] = useState({
+    latitude: user?.location?.latitude?.toString() || "",
+    longitude: user?.location?.longitude?.toString() || "",
+    radiusKm: "8",
+  });
+  const [janaushadhiResult, setJanaushadhiResult] = useState({
+    janaushadhi: [],
+    privateStores: [],
+    recommendation: "",
+  });
 
   const canCreateAsha = user.role === "ADMIN";
+  const isAshaRole = user.role === "ASHA";
+  const isMedicalRole = user.role === "MEDICAL";
+  const isHospitalRole = user.role === "HOSPITAL";
   const canSubmitReports = user.role === "ASHA" || user.role === "MEDICAL";
   const canSeePendingApprovals = user.role === "ADMIN";
-  const canSeeLocationInsight = user.role === "HOSPITAL" || user.role === "MEDICAL";
+  const canSeeLocationInsight = user.role === "HOSPITAL";
+  const canSeeAdvancedIntel = canCreateAsha || isHospitalRole;
   const showBottomDock = !canCreateAsha;
 
   const loadReports = useCallback(
@@ -329,6 +461,43 @@ export default function WorkspaceClient({ user }) {
         if (activeFilters.severity) params.set("severity", activeFilters.severity);
         if (activeFilters.startDate) params.set("startDate", activeFilters.startDate);
         if (activeFilters.endDate) params.set("endDate", activeFilters.endDate);
+
+        const selectedLatitude = Number(selectedRegion?.latitude);
+        const selectedLongitude = Number(selectedRegion?.longitude);
+        const userLatitude = Number(user?.location?.latitude);
+        const userLongitude = Number(user?.location?.longitude);
+        const reportLatitude = Number(reportForm.latitude);
+        const reportLongitude = Number(reportForm.longitude);
+        const centerLatitude = Number.isFinite(selectedLatitude)
+          ? selectedLatitude
+          : Number.isFinite(userLatitude)
+            ? userLatitude
+            : Number.isFinite(reportLatitude)
+              ? reportLatitude
+              : null;
+        const centerLongitude = Number.isFinite(selectedLongitude)
+          ? selectedLongitude
+          : Number.isFinite(userLongitude)
+            ? userLongitude
+            : Number.isFinite(reportLongitude)
+              ? reportLongitude
+              : null;
+        const radiusValue = Number(areaRadiusKm);
+
+        if (
+          Number.isFinite(radiusValue) &&
+          radiusValue >= 2 &&
+          Number.isFinite(centerLatitude) &&
+          Number.isFinite(centerLongitude)
+        ) {
+          params.set("radiusKm", String(radiusValue));
+        }
+
+        if (Number.isFinite(centerLatitude) && Number.isFinite(centerLongitude)) {
+          params.set("centerLat", String(centerLatitude));
+          params.set("centerLng", String(centerLongitude));
+        }
+
         if (user.role === "ADMIN") {
           if (activeFilters.district) params.set("district", activeFilters.district);
           if (activeFilters.village) params.set("village", activeFilters.village);
@@ -362,6 +531,14 @@ export default function WorkspaceClient({ user }) {
         setDiseaseDistribution(
           Array.isArray(payload?.diseaseDistribution) ? payload.diseaseDistribution : []
         );
+        setRoleActions(Array.isArray(payload?.roleActions) ? payload.roleActions : []);
+        setDecisionCenter(payload?.decisionCenter || {});
+        setRoleDecisionPack(payload?.roleDecisionPack || {});
+        setResponseMeta({
+          roleScope: payload?.meta?.roleScope || "",
+          locationWindow: payload?.meta?.locationWindow || null,
+          outbreakAutomation: payload?.meta?.outbreakAutomation || null,
+        });
         setAiInsights({
           topHighRiskZones: Array.isArray(payload?.aiInsights?.topHighRiskZones)
             ? payload.aiInsights.topHighRiskZones
@@ -391,7 +568,17 @@ export default function WorkspaceClient({ user }) {
         setIsLoadingReports(false);
       }
     },
-    [toast, user.role]
+    [
+      areaRadiusKm,
+      reportForm.latitude,
+      reportForm.longitude,
+      selectedRegion?.latitude,
+      selectedRegion?.longitude,
+      toast,
+      user?.location?.latitude,
+      user?.location?.longitude,
+      user.role,
+    ]
   );
 
   const loadPendingUsers = useCallback(async () => {
@@ -473,6 +660,53 @@ export default function WorkspaceClient({ user }) {
     [canCreateAsha, toast]
   );
 
+  const loadJanaushadhi = useCallback(
+    async (
+      activeSearch = {
+        latitude: janaushadhiSearch.latitude,
+        longitude: janaushadhiSearch.longitude,
+        radiusKm: janaushadhiSearch.radiusKm,
+      }
+    ) => {
+      const latitude = Number(activeSearch.latitude);
+      const longitude = Number(activeSearch.longitude);
+      const radiusKm = Number(activeSearch.radiusKm || 8);
+
+      if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+        toast.error("Missing map center", "Set latitude and longitude for Janaushadhi lookup.");
+        return;
+      }
+
+      setIsLoadingJanaushadhi(true);
+      try {
+        const params = new URLSearchParams({
+          latitude: String(latitude),
+          longitude: String(longitude),
+          radiusKm: String(Number.isFinite(radiusKm) ? Math.max(2, Math.min(20, radiusKm)) : 8),
+        });
+        const response = await fetch(`/api/location/janaushadhi?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        const payload = await readApiPayload(response);
+        if (!response.ok) {
+          throw new Error(resolveApiError(payload, "Failed to load Janaushadhi stores"));
+        }
+
+        setJanaushadhiResult({
+          janaushadhi: Array.isArray(payload?.janaushadhi) ? payload.janaushadhi : [],
+          privateStores: Array.isArray(payload?.privateStores) ? payload.privateStores : [],
+          recommendation: payload?.recommendation || "",
+        });
+      } catch (error) {
+        toast.error("Janaushadhi lookup failed", error.message || "Try again in a moment.");
+      } finally {
+        setIsLoadingJanaushadhi(false);
+      }
+    },
+    [janaushadhiSearch.latitude, janaushadhiSearch.longitude, janaushadhiSearch.radiusKm, toast]
+  );
+
   useEffect(() => {
     if (didBootstrapRef.current) return;
     didBootstrapRef.current = true;
@@ -494,7 +728,70 @@ export default function WorkspaceClient({ user }) {
     if (canCreateAsha) {
       loadAshaDirectory();
     }
-  }, [canCreateAsha, canSeePendingApprovals, loadAshaDirectory, loadPendingUsers, loadReports]);
+
+    const initialLatitude = Number(janaushadhiSearch.latitude);
+    const initialLongitude = Number(janaushadhiSearch.longitude);
+    if (Number.isFinite(initialLatitude) && Number.isFinite(initialLongitude)) {
+      loadJanaushadhi(janaushadhiSearch);
+    }
+  }, [
+    canCreateAsha,
+    canSeePendingApprovals,
+    janaushadhiSearch,
+    loadAshaDirectory,
+    loadJanaushadhi,
+    loadPendingUsers,
+    loadReports,
+  ]);
+
+  useEffect(() => {
+    if (!canSubmitReports) return;
+    if (!navigator?.geolocation) return;
+    if (normalizeText(reportForm.latitude) && normalizeText(reportForm.longitude)) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setReportForm((current) => {
+          if (normalizeText(current.latitude) && normalizeText(current.longitude)) {
+            return current;
+          }
+
+          return {
+            ...current,
+            latitude: String(position.coords.latitude),
+            longitude: String(position.coords.longitude),
+          };
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 300000 }
+    );
+  }, [canSubmitReports, reportForm.latitude, reportForm.longitude]);
+
+  useEffect(() => {
+    const latitude = Number(selectedRegion?.latitude);
+    const longitude = Number(selectedRegion?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    setJanaushadhiSearch((current) => ({
+      ...current,
+      latitude: String(latitude),
+      longitude: String(longitude),
+    }));
+  }, [selectedRegion?.latitude, selectedRegion?.longitude]);
+
+  useEffect(() => {
+    if (didBootstrapRef.current) return;
+    const latitude = Number(user?.location?.latitude);
+    const longitude = Number(user?.location?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+
+    setJanaushadhiSearch((current) => ({
+      ...current,
+      latitude: current.latitude || String(latitude),
+      longitude: current.longitude || String(longitude),
+    }));
+  }, [user?.location?.latitude, user?.location?.longitude]);
 
   const scopedReports = useMemo(() => {
     if (!selectedRegion?.district) {
@@ -580,6 +877,67 @@ export default function WorkspaceClient({ user }) {
     return topMatches.slice(0, 12);
   }, [ashaDirectory]);
 
+  const systemPipeline = useMemo(
+    () => [
+      {
+        key: "detect",
+        label: "Detect",
+        value: decisionCenter?.statusPills?.risk || `${scopedReports.length} reports`,
+        tone: "text-rose-700",
+      },
+      {
+        key: "verify",
+        label: "Verify",
+        value: `${aiInsights.mismatchReports.length} mismatch checks`,
+        tone: "text-amber-700",
+      },
+      {
+        key: "predict",
+        label: "Predict",
+        value:
+          decisionCenter?.trendSignal?.trend && Number.isFinite(decisionCenter?.trendSignal?.growthPercent)
+            ? `${decisionCenter.trendSignal.trend} (${decisionCenter.trendSignal.growthPercent}%)`
+            : `${Math.round(summary.outbreakProbabilityNext3Days * 100)}% outbreak probability`,
+        tone: "text-sky-700",
+      },
+      {
+        key: "alert",
+        label: "Alert",
+        value: `${dashboardAlerts.length} smart alerts`,
+        tone: "text-violet-700",
+      },
+      {
+        key: "supply",
+        label: "Supply",
+        value:
+          decisionCenter?.statusPills?.supply ||
+          `${aiInsights.medicineDemand.length} medicine plans`,
+        tone: "text-emerald-700",
+      },
+      {
+        key: "prevent",
+        label: "Prevent",
+        value:
+          decisionCenter?.statusPills?.price ||
+          `${summary.expectedPatientsNext2Days} hospital prep target`,
+        tone: "text-cyan-700",
+      },
+    ],
+    [
+      decisionCenter?.statusPills?.price,
+      decisionCenter?.statusPills?.risk,
+      decisionCenter?.statusPills?.supply,
+      decisionCenter?.trendSignal?.growthPercent,
+      decisionCenter?.trendSignal?.trend,
+      aiInsights.medicineDemand.length,
+      aiInsights.mismatchReports.length,
+      dashboardAlerts.length,
+      scopedReports.length,
+      summary.expectedPatientsNext2Days,
+      summary.outbreakProbabilityNext3Days,
+    ]
+  );
+
   const selectedZoneInsight = useMemo(() => {
     if (!selectedRegion?.district) return null;
 
@@ -633,6 +991,312 @@ export default function WorkspaceClient({ user }) {
       .sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0))
       .slice(0, 3);
   }, [riskZones, selectedRegion, selectedZoneInsight]);
+
+  const scopedRoleActions = useMemo(
+    () => (Array.isArray(roleActions) ? roleActions.slice(0, 4) : []),
+    [roleActions]
+  );
+
+  const automationStatus = responseMeta?.outbreakAutomation || null;
+  const janaushadhiNearby = useMemo(
+    () =>
+      Array.isArray(janaushadhiResult?.janaushadhi)
+        ? janaushadhiResult.janaushadhi.slice(0, 6)
+        : [],
+    [janaushadhiResult?.janaushadhi]
+  );
+  const privateNearby = useMemo(
+    () =>
+      Array.isArray(janaushadhiResult?.privateStores)
+        ? janaushadhiResult.privateStores.slice(0, 6)
+        : [],
+    [janaushadhiResult?.privateStores]
+  );
+  const topHotspot = useMemo(
+    () =>
+      aiInsights.topHighRiskZones[0] ||
+      riskZones[0] || {
+        district: "No hotspot",
+        village: "No hotspot",
+        riskScore: 0,
+      },
+    [aiInsights.topHighRiskZones, riskZones]
+  );
+  const mostNeededMedicine = useMemo(() => {
+    if (selectedAreaDemand[0]) return selectedAreaDemand[0];
+    if (aiInsights.medicineDemand[0]) return aiInsights.medicineDemand[0];
+    if (aiInsights.topMedicinesSold[0]) {
+      return {
+        medicine: aiInsights.topMedicinesSold[0].medicine,
+        expectedUnitsNext3Days: aiInsights.topMedicinesSold[0].totalUnits,
+      };
+    }
+    return null;
+  }, [aiInsights.medicineDemand, aiInsights.topMedicinesSold, selectedAreaDemand]);
+
+  const aiInsightNarrative = useMemo(() => {
+    const areaName = selectedZoneInsight
+      ? `${selectedZoneInsight.village}, ${selectedZoneInsight.district}`
+      : `${topHotspot.village}, ${topHotspot.district}`;
+    const demandHint = mostNeededMedicine
+      ? `${mostNeededMedicine.medicine} demand is rising.`
+      : "Medicine demand signals are still building.";
+    const priceHint = selectedAreaPriceAnomalies[0]
+      ? `${selectedAreaPriceAnomalies[0].medicine} shows pricing stress in this zone.`
+      : "No major price inflation found in the current view.";
+    return [
+      `AI Insight: ${areaName} is ${
+        (selectedZoneInsight?.riskScore || topHotspot?.riskScore || 0) >= 70
+          ? "becoming a hotspot"
+          : "under active watch"
+      }.`,
+      `Why: Fever case trend and verification signals shifted in recent reports. ${demandHint}`,
+      `Action: ${priceHint}`,
+    ];
+  }, [mostNeededMedicine, selectedAreaPriceAnomalies, selectedZoneInsight, topHotspot]);
+
+  const roleTaskAlerts = useMemo(() => {
+    if (Array.isArray(roleDecisionPack?.tasks) && roleDecisionPack.tasks.length) {
+      return roleDecisionPack.tasks.slice(0, 4);
+    }
+
+    if (user.role === "ASHA") {
+      return [
+        "Visit nearby homes and spread awareness in high-risk pockets.",
+        "Capture household updates with GPS using app form or WhatsApp.",
+      ];
+    }
+    if (user.role === "HOSPITAL") {
+      return [
+        `Prepare for about ${summary.expectedPatientsNext2Days} patients in next 48 hours.`,
+        "Keep triage and fever ward response teams ready.",
+      ];
+    }
+    if (user.role === "MEDICAL") {
+      return [
+        "Track medicine demand and keep stock buffer for likely shortage.",
+        "Report real selling prices to detect overpricing quickly.",
+      ];
+    }
+    return [
+      "Coordinate ASHA, hospitals, and stores for high-risk areas.",
+      "Trigger outbreak communication if risk and load keep rising.",
+    ];
+  }, [roleDecisionPack?.tasks, summary.expectedPatientsNext2Days, user.role]);
+  const mapRoleMessage = useMemo(() => {
+    if (isAshaRole) {
+      return "Focus on your assigned areas, household awareness, and fast field reporting.";
+    }
+    if (isMedicalRole) {
+      return "Focus on demand shifts, pricing fairness, and stock readiness in your area.";
+    }
+    if (isHospitalRole) {
+      return "Focus on incoming patient load and high-risk zone readiness.";
+    }
+    return "Full control view across districts for outbreak response coordination.";
+  }, [isAshaRole, isHospitalRole, isMedicalRole]);
+
+  const priceImpactCard = useMemo(() => {
+    const anomaly = selectedAreaPriceAnomalies[0] || aiInsights.priceAnomalies[0] || null;
+    if (!anomaly) return null;
+
+    const benchmark = Number(anomaly.janaushadhiReference || anomaly.averageAreaPrice || 0);
+    const privatePrice = Number(anomaly.privatePrice || 0);
+    const savings = Math.max(0, privatePrice - benchmark);
+    return {
+      medicine: anomaly.medicine,
+      privatePrice,
+      benchmark,
+      savings,
+      overByPercent: anomaly.overByPercent,
+      district: anomaly.district,
+      village: anomaly.village,
+    };
+  }, [aiInsights.priceAnomalies, selectedAreaPriceAnomalies]);
+
+  const supplyRoutes = useMemo(() => {
+    const origin = janaushadhiNearby[0] || null;
+    const destination = selectedZoneInsight || topHotspot || null;
+    if (
+      !origin ||
+      !Number.isFinite(origin.latitude) ||
+      !Number.isFinite(origin.longitude) ||
+      !Number.isFinite(destination?.latitude) ||
+      !Number.isFinite(destination?.longitude)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        from: { latitude: origin.latitude, longitude: origin.longitude },
+        to: { latitude: destination.latitude, longitude: destination.longitude },
+        label: `${origin.name} -> ${destination.village}, ${destination.district}`,
+      },
+    ];
+  }, [janaushadhiNearby, selectedZoneInsight, topHotspot]);
+
+  const mapPharmacyPoints = useMemo(
+    () =>
+      [...janaushadhiNearby, ...privateNearby].map((entry, index) => ({
+        id: entry.id || `pharmacy-${index}`,
+        name: entry.name,
+        type: entry.type || "PRIVATE",
+        latitude: entry.latitude,
+        longitude: entry.longitude,
+        distanceKm: entry.distanceKm,
+        address: entry.address,
+        district: selectedRegion?.district || user?.location?.district || null,
+        village: selectedRegion?.village || user?.location?.village || null,
+      })),
+    [
+      janaushadhiNearby,
+      privateNearby,
+      selectedRegion?.district,
+      selectedRegion?.village,
+      user?.location?.district,
+      user?.location?.village,
+    ]
+  );
+  const supplyPlanner = useMemo(() => {
+    const demandRows = selectedAreaDemand.length ? selectedAreaDemand : aiInsights.medicineDemand;
+    const expectedNeed =
+      demandRows.reduce((sum, item) => sum + (Number(item?.expectedUnitsNext3Days) || 0), 0) ||
+      (mostNeededMedicine?.expectedUnitsNext3Days || 0);
+    const hasStockSignals = demandRows.some(
+      (item) =>
+        Number.isFinite(item?.currentStock) || Number.isFinite(item?.incomingStock)
+    );
+    const currentStockLevel = hasStockSignals
+      ? Math.max(
+          0,
+          Math.round(demandRows.reduce((sum, item) => sum + (Number(item?.currentStock) || 0), 0))
+        )
+      : Math.max(0, Math.round((janaushadhiNearby.length || 1) * 65 + (privateNearby.length || 0) * 40));
+    const incomingSupply = hasStockSignals
+      ? Math.max(
+          0,
+          Math.round(demandRows.reduce((sum, item) => sum + (Number(item?.incomingStock) || 0), 0))
+        )
+      : Math.max(0, Math.round(expectedNeed * 0.45));
+    const stockAfterIncoming = currentStockLevel + incomingSupply;
+    const shortageUnits = Math.max(0, expectedNeed - stockAfterIncoming);
+
+    return {
+      expectedNeed,
+      currentStockLevel,
+      incomingSupply,
+      stockAfterIncoming,
+      shortageUnits,
+    };
+  }, [
+    aiInsights.medicineDemand,
+    janaushadhiNearby.length,
+    mostNeededMedicine?.expectedUnitsNext3Days,
+    privateNearby.length,
+    selectedAreaDemand,
+  ]);
+
+  const medicalStoreBoard = useMemo(() => {
+    if (!isMedicalRole) return null;
+
+    const districtScope = selectedRegion?.district || user?.location?.district || "";
+    const villageScope = selectedRegion?.village || user?.location?.village || "";
+    const ownWorkerId =
+      user?.workerId || (user?.id ? `MEDICAL_${String(user.id).slice(-6).toUpperCase()}` : "");
+    const areaDemandRows = aiInsights.medicineDemand.filter((item) => {
+      const districtMatch =
+        !districtScope || normalizeText(item?.district) === normalizeText(districtScope);
+      const villageMatch =
+        !villageScope || normalizeText(item?.village) === normalizeText(villageScope);
+      return districtMatch && villageMatch;
+    });
+    const projectedNeed = areaDemandRows.reduce(
+      (sum, item) => sum + (Number(item?.expectedUnitsNext3Days) || 0),
+      0
+    );
+    const demandSignal = resolveDemandSignal(projectedNeed);
+
+    const mean = (items) =>
+      items.length ? items.reduce((sum, value) => sum + value, 0) / items.length : null;
+    const priceBuckets = new Map();
+    const medicalReports = scopedReports.filter((report) => report.reporterRole === "MEDICAL");
+
+    for (const report of medicalReports) {
+      const sales = Array.isArray(report?.medicineSales) ? report.medicineSales : [];
+      const isOwnReport = report.workerId === ownWorkerId || report.reportedBy === user?.id;
+      for (const sale of sales) {
+        const medicine = typeof sale?.medicine === "string" ? sale.medicine.trim() : "";
+        const unitPrice = Number(sale?.unitPrice);
+        const benchmarkPrice = Number(sale?.benchmarkPrice);
+        if (!medicine || !Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+
+        const key = normalizeText(medicine);
+        const bucket = priceBuckets.get(key) || {
+          medicine,
+          ownPrices: [],
+          nearbyPrices: [],
+          janaushadhiPrices: [],
+        };
+
+        if (isOwnReport) {
+          bucket.ownPrices.push(unitPrice);
+        } else {
+          bucket.nearbyPrices.push(unitPrice);
+        }
+        if (Number.isFinite(benchmarkPrice) && benchmarkPrice > 0) {
+          bucket.janaushadhiPrices.push(benchmarkPrice);
+        }
+        priceBuckets.set(key, bucket);
+      }
+    }
+
+    const comparisons = [...priceBuckets.values()]
+      .map((bucket) => {
+        const ownPrice = mean(bucket.ownPrices);
+        if (!Number.isFinite(ownPrice)) return null;
+        const nearbyAvg = mean(bucket.nearbyPrices);
+        const janaPrice = mean(bucket.janaushadhiPrices);
+
+        const overNearby =
+          Number.isFinite(nearbyAvg) && nearbyAvg > 0 ? ownPrice > nearbyAvg * 1.2 : false;
+        const overJana =
+          Number.isFinite(janaPrice) && janaPrice > 0 ? ownPrice > janaPrice * 1.35 : false;
+        const status =
+          overNearby || overJana ? "You are overpriced" : "Competitive pricing";
+
+        const cheapest = Math.min(
+          ...[ownPrice, nearbyAvg, janaPrice].filter((value) => Number.isFinite(value) && value > 0)
+        );
+
+        return {
+          medicine: bucket.medicine,
+          ownPrice: Number(ownPrice.toFixed(2)),
+          nearbyAvg: Number.isFinite(nearbyAvg) ? Number(nearbyAvg.toFixed(2)) : null,
+          janaPrice: Number.isFinite(janaPrice) ? Number(janaPrice.toFixed(2)) : null,
+          status,
+          isCheapest: Number.isFinite(cheapest) && Math.abs(ownPrice - cheapest) < 0.01,
+        };
+      })
+      .filter(Boolean)
+      .slice(0, 5);
+
+    return {
+      demandSignal,
+      projectedNeed,
+      comparisons,
+    };
+  }, [
+    aiInsights.medicineDemand,
+    isMedicalRole,
+    scopedReports,
+    selectedRegion?.district,
+    selectedRegion?.village,
+    user?.id,
+    user?.location?.district,
+    user?.location?.village,
+    user?.workerId,
+  ]);
 
   async function handleCopyAshaId(workerId) {
     if (!workerId) return;
@@ -739,12 +1403,21 @@ export default function WorkspaceClient({ user }) {
     setIsSubmittingReport(true);
 
     try {
+      const rawMedicineLines = reportForm.medicineSalesText
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
       const medicineSales =
         user.role === "MEDICAL" ? parseMedicineSalesText(reportForm.medicineSalesText) : [];
 
-      if (user.role === "MEDICAL" && reportForm.medicineSalesText.trim() && !medicineSales.length) {
+      if (user.role === "MEDICAL" && rawMedicineLines.length === 0) {
         throw new Error(
-          "Medicine format invalid. Use: Medicine,Units,PrivatePrice,JanaushadhiPrice (one per line)."
+          "Medical stock lines are required. Use: Medicine,UnitsSold,PrivatePrice,BenchmarkPrice,CurrentStock,IncomingStock"
+        );
+      }
+      if (user.role === "MEDICAL" && rawMedicineLines.length !== medicineSales.length) {
+        throw new Error(
+          "One or more medicine lines are invalid. Use comma format: Medicine,UnitsSold,PrivatePrice,BenchmarkPrice,CurrentStock,IncomingStock"
         );
       }
 
@@ -752,7 +1425,7 @@ export default function WorkspaceClient({ user }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          disease: reportForm.disease,
+          disease: reportForm.disease || "GENERAL_FEVER",
           householdsVisited: reportForm.householdsVisited,
           newCases: reportForm.newCases,
           criticalCases: reportForm.criticalCases,
@@ -778,6 +1451,13 @@ export default function WorkspaceClient({ user }) {
         medicineSalesText: "",
         notes: "",
       }));
+      if (normalizeText(reportForm.latitude) && normalizeText(reportForm.longitude)) {
+        setJanaushadhiSearch((current) => ({
+          ...current,
+          latitude: reportForm.latitude,
+          longitude: reportForm.longitude,
+        }));
+      }
       loadReports(filters);
     } catch (error) {
       toast.error("Submission failed", error.message || "Please validate the form.");
@@ -794,10 +1474,17 @@ export default function WorkspaceClient({ user }) {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const nextLatitude = String(position.coords.latitude);
+        const nextLongitude = String(position.coords.longitude);
         setReportForm((current) => ({
           ...current,
-          latitude: String(position.coords.latitude),
-          longitude: String(position.coords.longitude),
+          latitude: nextLatitude,
+          longitude: nextLongitude,
+        }));
+        setJanaushadhiSearch((current) => ({
+          ...current,
+          latitude: nextLatitude,
+          longitude: nextLongitude,
         }));
         toast.success("GPS captured", "Current coordinates added to the report.");
       },
@@ -846,8 +1533,289 @@ export default function WorkspaceClient({ user }) {
             <StatCard label="Critical Cases" value={summary.criticalCases} />
             <StatCard label="Active Cases" value={summary.activeCases} />
           </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top Hotspot</p>
+              <p className="mt-1 text-sm font-bold text-rose-700">
+                {topHotspot.village}, {topHotspot.district}
+              </p>
+              <p className="text-xs text-slate-600">Risk score {topHotspot.riskScore || 0}/100</p>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Most Needed Medicine
+              </p>
+              <p className="mt-1 text-sm font-bold text-emerald-700">
+                {mostNeededMedicine?.medicine || "Waiting for signals"}
+              </p>
+              <p className="text-xs text-slate-600">
+                {mostNeededMedicine?.expectedUnitsNext3Days
+                  ? `${mostNeededMedicine.expectedUnitsNext3Days} units expected`
+                  : "Demand increasing signal not ready"}
+              </p>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quick Summary</p>
+              <p className="mt-1 text-sm font-bold text-sky-700">{summary.newCases} new fever-like cases today</p>
+              <p className="text-xs text-slate-600">
+                {summary.criticalAlerts} high-risk areas and rising demand watch.
+              </p>
+            </article>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            <article className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-rose-700">Risk Decision</p>
+              <p className="mt-1 text-sm font-bold text-rose-800">
+                {decisionCenter?.statusPills?.risk || roleDecisionPack?.primaryDecision || "Risk Under Watch"}
+              </p>
+            </article>
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">Demand Decision</p>
+              <p className="mt-1 text-sm font-bold text-amber-800">
+                {decisionCenter?.statusPills?.demand || "Demand Watch"}
+              </p>
+            </article>
+            <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Supply Decision</p>
+              <p className="mt-1 text-sm font-bold text-emerald-800">
+                {decisionCenter?.statusPills?.supply || roleDecisionPack?.secondaryDecision || "Stock Check"}
+              </p>
+            </article>
+            <article className="rounded-2xl border border-sky-200 bg-sky-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Price Decision</p>
+              <p className="mt-1 text-sm font-bold text-sky-800">
+                {decisionCenter?.statusPills?.price || "Price Normal"}
+              </p>
+            </article>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-[linear-gradient(120deg,#fff7ed_0%,#eff6ff_45%,#ecfeff_100%)] p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Detect - Verify - Predict - Alert - Supply - Prevent
+            </p>
+            <div className="mt-2 grid gap-2 md:grid-cols-6">
+              {systemPipeline.map((stage) => (
+                <article key={stage.key} className="rounded-xl border border-white/70 bg-white/85 p-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {stage.label}
+                  </p>
+                  <p className={`mt-1 text-xs font-bold ${stage.tone}`}>{stage.value}</p>
+                </article>
+              ))}
+            </div>
+          </div>
         </section>
 
+        <section id="outbreak-map" className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Map Command Center</h2>
+              <p className="text-sm text-slate-600">{mapRoleMessage}</p>
+            </div>
+            <p className="inline-flex items-center gap-1 text-sm text-slate-600">
+              <Clock3 size={14} />
+              {isLoadingReports ? "Loading reports..." : `${scopedReports.length} visible reports`}
+            </p>
+          </div>
+          <HealthMap
+            reports={reports}
+            entities={mapEntities}
+            riskZones={riskZones}
+            role={user.role}
+            userLocation={user.location || null}
+            selectedRegion={selectedRegion}
+            onRegionSelect={setSelectedRegion}
+            selectedZoneInsight={selectedZoneInsight}
+            nearbyRiskZones={nearbyZoneRisk}
+            aiInsights={aiInsightNarrative}
+            supplyRoutes={supplyRoutes}
+            pharmacies={mapPharmacyPoints}
+            medicineDemand={selectedAreaDemand.length ? selectedAreaDemand : aiInsights.medicineDemand}
+          />
+        </section>
+
+        <section
+          id="quick-capture"
+          className={`grid gap-4 ${canCreateAsha ? "" : "xl:grid-cols-[240px_minmax(0,1fr)]"}`}
+        >
+          {!canCreateAsha ? (
+            <RoleSidebar
+              role={user.role}
+              canSubmitReports={canSubmitReports}
+              canSeeLocationInsight={canSeeLocationInsight}
+              canSeeAiPanel={Boolean(selectedRegion?.district)}
+            />
+          ) : null}
+
+          <div className="space-y-4">
+            <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Quick Capture Hub</h2>
+                  <p className="text-sm text-slate-600">
+                    Simple flow: WhatsApp or app report with GPS, disease, new cases, and critical cases.
+                  </p>
+                </div>
+                <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                  Scope: {responseMeta?.roleScope || "Loading role scope..."}
+                </p>
+              </div>
+
+              <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">WhatsApp format</p>
+                  <p className="mt-1 text-xs text-slate-700">
+                    disease: dengue, cases: 12, critical: 2, district: indore, village: palda,
+                    lat: 22.72, lon: 75.86
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">App format</p>
+                  <p className="mt-1 text-xs text-slate-700">
+                    Households visited is optional now. Required fields are disease, cases, critical, and GPS.
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Nearby area view</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="2"
+                      max="80"
+                      value={areaRadiusKm}
+                      onChange={(event) => setAreaRadiusKm(event.target.value)}
+                      className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                    />
+                    <span className="text-xs text-slate-600">km radius</span>
+                    <button
+                      type="button"
+                      onClick={() => loadReports(filters)}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {scopedRoleActions.length ? (
+                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                  {scopedRoleActions.map((action, index) => (
+                    <article
+                      key={`${action.type || "action"}-${index}`}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+                    >
+                      <p className="font-semibold text-slate-900">
+                        {action.priority || "MEDIUM"} priority
+                      </p>
+                      <p className="mt-1">{action.text}</p>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+
+            {canCreateAsha ? (
+              <article
+                id="automation-hub"
+                className="rounded-3xl border border-amber-200 bg-amber-50/50 p-5 shadow-sm md:p-6"
+              >
+                <div className="flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-700" />
+                  <h3 className="text-base font-bold text-slate-900">Outbreak Auto-Alert Channels</h3>
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs">
+                    <p className="font-semibold text-slate-900">Webhook</p>
+                    <p className="mt-1 text-slate-600">
+                      {automationStatus?.webhookConfigured ? "Configured" : "Not configured"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs">
+                    <p className="font-semibold text-slate-900">Email</p>
+                    <p className="mt-1 text-slate-600">
+                      {automationStatus?.emailConfigured ? "Configured" : "Not configured"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Channel: {automationStatus?.emailChannel || "resend_api"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs">
+                    <p className="font-semibold text-slate-900">SMS</p>
+                    <p className="mt-1 text-slate-600">
+                      {automationStatus?.smsConfigured ? "Configured" : "Not configured"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-3 text-xs">
+                    <p className="font-semibold text-slate-900">Last auto trigger</p>
+                    <p className="mt-1 text-slate-600">
+                      {automationStatus?.lastTriggeredAt
+                        ? new Date(automationStatus.lastTriggeredAt).toLocaleString()
+                        : "Not triggered yet"}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-700">
+                  <Mail size={13} />
+                  Cooldown: {automationStatus?.cooldownMinutes || 20} minutes before repeat alert.
+                </p>
+              </article>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <h2 className="text-lg font-bold text-slate-900">AI Insight Story</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              simple language for non-technical users
+            </p>
+            <div className="mt-3 space-y-2">
+              {aiInsightNarrative.map((line, index) => (
+                <p
+                  key={`${line}-${index}`}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-cyan-100 bg-cyan-50 p-3 text-xs text-cyan-900">
+              <p className="font-semibold">Supply Action Recommended</p>
+              <p className="mt-1">
+                {decisionCenter?.supplyPlan?.medicine
+                  ? `This area will need ${decisionCenter.supplyPlan.requiredUnitsNext48Hours || 0} units of ${
+                      decisionCenter.supplyPlan.medicine
+                    } in next 48 hours.`
+                  : mostNeededMedicine
+                    ? `${mostNeededMedicine.medicine} stock should move to high-risk area in next 2-3 days.`
+                    : "Keep baseline fever medicine stock ready while monitoring trend."}
+              </p>
+            </div>
+          </article>
+
+          <article className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+            <h2 className="text-lg font-bold text-slate-900">Role Alerts</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+              action messages for {user.role.toLowerCase()}
+            </p>
+            <div className="mt-3 space-y-2">
+              {roleTaskAlerts.map((line, index) => (
+                <p
+                  key={`${line}-${index}`}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
+          </article>
+        </section>
+
+        {canSeeAdvancedIntel ? (
         <section id="admin-filters" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <h2 className="text-lg font-bold text-slate-900">Outbreak Insights & Filters</h2>
@@ -860,6 +1828,19 @@ export default function WorkspaceClient({ user }) {
                 Focus: {selectedRegion.village ? `${selectedRegion.village}, ` : ""}
                 {selectedRegion.district} (Clear)
               </button>
+            ) : null}
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
+              Scope: {responseMeta?.roleScope || "role scope loading"}
+            </span>
+            {responseMeta?.locationWindow?.enabled ? (
+              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-700">
+                Radius {responseMeta.locationWindow.radiusKm} km around{" "}
+                {formatCoordinate(responseMeta.locationWindow.center?.latitude)},
+                {formatCoordinate(responseMeta.locationWindow.center?.longitude)}
+              </span>
             ) : null}
           </div>
 
@@ -1006,6 +1987,36 @@ export default function WorkspaceClient({ user }) {
                 </article>
               </div>
 
+              <article className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Price Comparison Impact
+                </p>
+                {priceImpactCard ? (
+                  <div className="mt-2 grid gap-2 md:grid-cols-[1fr_auto_1fr] md:items-center">
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-700">Private Price</p>
+                      <p className="mt-1 text-2xl font-bold text-rose-700">Rs {priceImpactCard.privatePrice}</p>
+                    </div>
+                    <p className="text-center text-xl font-black text-slate-500">to</p>
+                    <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+                        Janaushadhi Price
+                      </p>
+                      <p className="mt-1 text-2xl font-bold text-emerald-700">Rs {priceImpactCard.benchmark}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Price gap card appears when private vs benchmark pricing is available.
+                  </p>
+                )}
+                {priceImpactCard ? (
+                  <p className="mt-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                    Save Rs {priceImpactCard.savings} ({priceImpactCard.overByPercent}% overpricing flagged)
+                  </p>
+                ) : null}
+              </article>
+
               <div className="grid gap-3 lg:grid-cols-2">
                 <article className="rounded-xl border border-slate-200 bg-white p-3">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -1042,8 +2053,7 @@ export default function WorkspaceClient({ user }) {
                             {item.medicine} - {item.workerId}
                           </p>
                           <p className="text-slate-600">
-                            Private: ₹{item.privatePrice} | Janaushadhi: ₹
-                            {item.janaushadhiReference || item.averageAreaPrice}
+                            Private: Rs {item.privatePrice} | Janaushadhi: Rs {item.janaushadhiReference || item.averageAreaPrice}
                           </p>
                           <p className="font-medium text-rose-700">Overpriced by {item.overByPercent}%</p>
                         </div>
@@ -1099,6 +2109,345 @@ export default function WorkspaceClient({ user }) {
               </div>
             </div>
           ) : null}
+        </section>
+        ) : null}
+
+        {canSeeAdvancedIntel ? (
+        <section
+          id="ai-command-center"
+          className="rounded-3xl border border-slate-200 bg-[linear-gradient(130deg,#fff7ed_0%,#f8fafc_35%,#f0fdfa_100%)] p-5 shadow-sm md:p-6"
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <h2 className="text-lg font-bold text-slate-900">AI Command Center</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Detection | Logistics | Prevention
+            </p>
+          </div>
+
+          <div className="mt-3 grid gap-3 lg:grid-cols-3">
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Emerging Hotspots</p>
+              {aiInsights.emergingHotspots.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">No emerging hotspots detected right now.</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {aiInsights.emergingHotspots.slice(0, 3).map((zone) => (
+                    <div key={zone.id} className="rounded-lg border border-amber-100 bg-amber-50 px-2 py-1.5 text-xs">
+                      <p className="font-semibold text-amber-700">
+                        {zone.village}, {zone.district}
+                      </p>
+                      <p className="text-slate-700">
+                        Growth {zone.growthPercent}% | Risk {zone.riskScore}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Top Medicines Sold</p>
+              {aiInsights.topMedicinesSold.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">No medicine sales data yet.</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {aiInsights.topMedicinesSold.slice(0, 4).map((medicine) => (
+                    <div key={medicine.medicine} className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-slate-800">{medicine.medicine}</span>
+                      <span className="font-semibold text-emerald-700">{medicine.totalUnits} units</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trust & Fraud Watch</p>
+              {aiInsights.trustWatchlist.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">No low-trust or fraud-risk reporters flagged.</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {aiInsights.trustWatchlist.slice(0, 3).map((entry, index) => (
+                    <div
+                      key={`${entry.workerId}-${index}`}
+                      className="rounded-lg border border-rose-100 bg-rose-50 px-2 py-1.5 text-xs"
+                    >
+                      <p className="font-semibold text-rose-700">
+                        {entry.workerId} ({entry.reporterRole})
+                      </p>
+                      <p className="text-slate-700">
+                        Trust {entry.avgTrustScore} | Mismatch {entry.avgMismatchScore}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+          </div>
+        </section>
+        ) : null}
+
+        {isMedicalRole && medicalStoreBoard ? (
+          <section
+            id="medical-store-dashboard"
+            className="rounded-3xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm md:p-6"
+          >
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Medical Store Dashboard</h2>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                  demand + price comparison + stock guidance
+                </p>
+              </div>
+              <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700">
+                {medicalStoreBoard.demandSignal}
+              </span>
+            </div>
+
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <p className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-semibold text-emerald-700">
+                You should stock {decisionCenter?.supplyPlan?.requiredUnitsNext48Hours || 0} units
+                of {decisionCenter?.supplyPlan?.medicine || "Paracetamol"}.
+              </p>
+              <p
+                className={`rounded-xl border px-3 py-2 text-xs font-semibold ${
+                  decisionCenter?.statusPills?.price === "Overpriced Medicine"
+                    ? "border-rose-200 bg-rose-50 text-rose-700"
+                    : "border-sky-200 bg-sky-50 text-sky-700"
+                }`}
+              >
+                {decisionCenter?.statusPills?.price === "Overpriced Medicine"
+                  ? "You are overpriced. Please match benchmark."
+                  : "Pricing is competitive with nearby benchmark."}
+              </p>
+            </div>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <article className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Area Demand</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-700">
+                  {medicalStoreBoard.projectedNeed || 0} units
+                </p>
+                <p className="text-xs text-slate-600">Expected medicine demand in next 2-3 days.</p>
+              </article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current Stock</p>
+                <p className="mt-1 text-2xl font-bold text-sky-700">{supplyPlanner.currentStockLevel} units</p>
+                <p className="text-xs text-slate-600">Estimated available stock near selected zone.</p>
+              </article>
+              <article className="rounded-2xl border border-slate-200 bg-white p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Incoming Supply</p>
+                <p className="mt-1 text-2xl font-bold text-violet-700">{supplyPlanner.incomingSupply} units</p>
+                <p className="text-xs text-slate-600">
+                  {supplyPlanner.shortageUnits > 0
+                    ? `${supplyPlanner.shortageUnits} units may still be short.`
+                    : "Supply looks sufficient for current demand."}
+                </p>
+              </article>
+            </div>
+
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Price Comparison</p>
+              {medicalStoreBoard.comparisons.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Add medicine sales in your report to unlock comparison cards.
+                </p>
+              ) : (
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  {medicalStoreBoard.comparisons.map((item) => (
+                    <article
+                      key={item.medicine}
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <p className="text-sm font-semibold text-slate-900">{item.medicine}</p>
+                      <p className="mt-1 text-xs text-slate-700">
+                        {formatMoney(item.ownPrice)} vs{" "}
+                        {Number.isFinite(item.janaPrice) ? formatMoney(item.janaPrice) : "--"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Nearby avg: {Number.isFinite(item.nearbyAvg) ? formatMoney(item.nearbyAvg) : "--"}
+                      </p>
+                      <p
+                        className={`mt-1 text-xs font-semibold ${
+                          item.status === "You are overpriced"
+                            ? "text-rose-700"
+                            : "text-emerald-700"
+                        }`}
+                      >
+                        {item.status}
+                      </p>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+        ) : null}
+
+        <section
+          id="janaushadhi-intel"
+          className="rounded-3xl border border-emerald-200 bg-[linear-gradient(130deg,#ecfdf5_0%,#ffffff_40%,#eff6ff_100%)] p-5 shadow-sm md:p-6"
+        >
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Janaushadhi Nearby Intelligence</h2>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                affordability map + area recommendation
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadJanaushadhi(janaushadhiSearch)}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isLoadingJanaushadhi}
+            >
+              <Store size={15} />
+              {isLoadingJanaushadhi ? "Searching..." : "Search Nearby"}
+            </button>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-4">
+            <input
+              type="number"
+              step="any"
+              placeholder="Latitude"
+              value={janaushadhiSearch.latitude}
+              onChange={(event) =>
+                setJanaushadhiSearch((current) => ({ ...current, latitude: event.target.value }))
+              }
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-100 focus:border-emerald-500 focus:ring"
+            />
+            <input
+              type="number"
+              step="any"
+              placeholder="Longitude"
+              value={janaushadhiSearch.longitude}
+              onChange={(event) =>
+                setJanaushadhiSearch((current) => ({ ...current, longitude: event.target.value }))
+              }
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-100 focus:border-emerald-500 focus:ring"
+            />
+            <input
+              type="number"
+              min="2"
+              max="20"
+              step="1"
+              placeholder="Radius (km)"
+              value={janaushadhiSearch.radiusKm}
+              onChange={(event) =>
+                setJanaushadhiSearch((current) => ({ ...current, radiusKm: event.target.value }))
+              }
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none ring-emerald-100 focus:border-emerald-500 focus:ring"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedRegion?.latitude || !selectedRegion?.longitude) return;
+                setJanaushadhiSearch((current) => ({
+                  ...current,
+                  latitude: String(selectedRegion.latitude),
+                  longitude: String(selectedRegion.longitude),
+                }));
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              <Navigation size={14} />
+              Use Selected Map Area
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Janaushadhi Centers
+              </p>
+              {janaushadhiNearby.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">No Janaushadhi center found in this range.</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {janaushadhiNearby.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1.5 text-xs"
+                    >
+                      <p className="font-semibold text-emerald-700">{entry.name}</p>
+                      <p className="text-slate-700">
+                        {entry.distanceKm} km away - {entry.address || "Address unavailable"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="rounded-2xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Nearby Private Pharmacies
+              </p>
+              {privateNearby.length === 0 ? (
+                <p className="mt-2 text-xs text-slate-500">No private pharmacy found in this range.</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {privateNearby.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-lg border border-sky-100 bg-sky-50 px-2 py-1.5 text-xs"
+                    >
+                      <p className="font-semibold text-sky-700">{entry.name}</p>
+                      <p className="text-slate-700">
+                        {entry.distanceKm} km away - {entry.address || "Address unavailable"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+          </div>
+
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+            <p className="font-semibold text-slate-900">AI recommendation</p>
+            <p className="mt-1">
+              {janaushadhiResult.recommendation ||
+                "Run area search to compare private vs Janaushadhi options for lower-cost supply."}
+            </p>
+            <p className="mt-2 text-slate-500">
+              Center: {formatCoordinate(Number(janaushadhiSearch.latitude))},{" "}
+              {formatCoordinate(Number(janaushadhiSearch.longitude))}
+            </p>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <article className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+              <p className="font-semibold">Stock incoming</p>
+              <p className="mt-1">
+                Current stock {supplyPlanner.currentStockLevel} units + incoming{" "}
+                {supplyPlanner.incomingSupply} units.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="font-semibold">Shortage predicted</p>
+              <p className="mt-1">
+                {supplyPlanner.shortageUnits > 0
+                  ? `${supplyPlanner.shortageUnits} units may be short in next 2-3 days.`
+                  : "No immediate shortage predicted for current demand."}
+              </p>
+            </article>
+            <article className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-900">
+              <p className="font-semibold">Supply action badge</p>
+              <p className="mt-1">
+                {supplyRoutes.length
+                  ? `Send ${supplyPlanner.expectedNeed || 0} units of ${
+                      mostNeededMedicine?.medicine || "priority medicine"
+                    } to selected risk zone.`
+                  : "Select a risk area to draw supply flow on map."}
+              </p>
+            </article>
+          </div>
+
+          <p className="mt-3 inline-flex items-center gap-2 text-xs text-slate-700">
+            <MessageCircle size={13} />
+            Field teams can share this same location context through WhatsApp ingestion.
+          </p>
         </section>
 
         {canCreateAsha ? (
@@ -1447,41 +2796,48 @@ export default function WorkspaceClient({ user }) {
 
         {canSubmitReports ? (
           <section id="field-report" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-            <h2 className="mb-1 text-lg font-bold text-slate-900">{user.role} Field Report</h2>
+            <h2 className="mb-1 text-lg font-bold text-slate-900">
+              {user.role === "MEDICAL" ? "Medical Stock & Supply Report" : `${user.role} Field Report`}
+            </h2>
             <p className="mb-3 text-sm text-slate-600">
-              Submit multilingual disease updates with voice or typing. Report is plotted on the map
-              instantly for your location.
+              {user.role === "MEDICAL"
+                ? "Submit medicine sales + stock data for better demand prediction and supply planning."
+                : "Submit disease updates with GPS from your field area."}
+            </p>
+            <p className="mb-3 text-xs text-slate-500">
+              {user.role === "MEDICAL"
+                ? "Quick rule: new cases, critical cases, GPS, and medicine stock lines are required."
+                : "Quick rule: new cases, critical cases, and GPS are required. Disease defaults to GENERAL_FEVER if blank."}
             </p>
             <form onSubmit={handleSubmitReport} className="grid gap-3 md:grid-cols-2">
-              <MultilingualVoiceInput
-                title="Disease Voice Capture"
-                description="Speak disease type in your language"
-                onTranscript={(text) =>
-                  setReportForm((current) => ({ ...current, disease: text.toUpperCase() }))
-                }
-                className="md:col-span-2"
-              />
-
               <input
-                placeholder="Disease (e.g. DENGUE)"
+                placeholder="Disease (optional, e.g. DENGUE)"
                 value={reportForm.disease}
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, disease: event.target.value }))
                 }
                 className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
-                required
               />
-              <input
-                type="number"
-                min="0"
-                placeholder="Households Visited"
-                value={reportForm.householdsVisited}
-                onChange={(event) =>
-                  setReportForm((current) => ({ ...current, householdsVisited: event.target.value }))
-                }
-                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
-                required
-              />
+              {user.role !== "MEDICAL" ? (
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="Households Visited (optional)"
+                  value={reportForm.householdsVisited}
+                  onChange={(event) =>
+                    setReportForm((current) => ({ ...current, householdsVisited: event.target.value }))
+                  }
+                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none ring-sky-200 focus:border-sky-500 focus:ring"
+                />
+              ) : (
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                  Format each medicine line:
+                  <br />
+                  <span className="font-semibold">
+                    Medicine,UnitsSold,PrivatePrice,BenchmarkPrice,CurrentStock,IncomingStock
+                  </span>
+                </div>
+              )}
               <input
                 type="number"
                 min="0"
@@ -1529,29 +2885,18 @@ export default function WorkspaceClient({ user }) {
 
               {user.role === "MEDICAL" ? (
                 <textarea
-                  placeholder="Medicine Sales (one per line): Paracetamol,120,12,8"
+                  placeholder="One per line: Paracetamol,120,12,8,300,120"
                   value={reportForm.medicineSalesText}
                   onChange={(event) =>
                     setReportForm((current) => ({ ...current, medicineSalesText: event.target.value }))
                   }
                   className="min-h-[90px] rounded-xl border border-emerald-300 bg-emerald-50/40 px-3 py-2.5 text-sm outline-none ring-emerald-200 focus:border-emerald-500 focus:ring md:col-span-2"
+                  required
                 />
               ) : null}
 
-              <MultilingualVoiceInput
-                title="Whisper Notes"
-                description="Speak field notes in any selected language"
-                onTranscript={(text) =>
-                  setReportForm((current) => ({
-                    ...current,
-                    notes: current.notes ? `${current.notes} ${text}` : text,
-                  }))
-                }
-                className="md:col-span-2"
-              />
-
               <textarea
-                placeholder="Whisper / Field Notes (optional)"
+                placeholder="Field Notes (optional)"
                 value={reportForm.notes}
                 onChange={(event) =>
                   setReportForm((current) => ({ ...current, notes: event.target.value }))
@@ -1600,62 +2945,61 @@ export default function WorkspaceClient({ user }) {
           </section>
         ) : null}
 
-        <section id="outbreak-map" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-bold text-slate-900">Outbreak Map</h2>
-            <p className="inline-flex items-center gap-1 text-sm text-slate-600">
-              <Clock3 size={14} />
-              {isLoadingReports ? "Loading reports..." : `${scopedReports.length} visible reports`}
-            </p>
-          </div>
-          <HealthMap
-            reports={reports}
-            entities={mapEntities}
-            riskZones={riskZones}
-            role={user.role}
-            userLocation={user.location || null}
-            selectedRegion={selectedRegion}
-            onRegionSelect={setSelectedRegion}
-          />
-        </section>
-
         <section id="recent-reports" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
-          <h2 className="mb-3 text-lg font-bold text-slate-900">Recent Reports</h2>
-          {scopedReports.length === 0 ? (
-            <p className="text-sm text-slate-500">No reports available yet.</p>
+          {isAshaRole ? (
+            <>
+              <h2 className="mb-3 text-lg font-bold text-slate-900">ASHA Tasks & Alerts</h2>
+              <div className="grid gap-2">
+                {roleTaskAlerts.map((task, index) => (
+                  <p
+                    key={`${task}-${index}`}
+                    className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                  >
+                    {task}
+                  </p>
+                ))}
+              </div>
+            </>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                    <th className="px-3 py-2">Source</th>
-                    <th className="px-3 py-2">Disease</th>
-                    <th className="px-3 py-2">Area</th>
-                    <th className="px-3 py-2">New</th>
-                    <th className="px-3 py-2">Critical</th>
-                    <th className="px-3 py-2">Worker</th>
-                    <th className="px-3 py-2">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scopedReports.slice(0, 15).map((report) => (
-                    <tr key={report.id} className="border-b border-slate-100 text-slate-700">
-                      <td className="px-3 py-2">{report.reporterRole || "ASHA"}</td>
-                      <td className="px-3 py-2 font-medium text-slate-900">{report.disease}</td>
-                      <td className="px-3 py-2">
-                        {report.location?.village}, {report.location?.district}
-                      </td>
-                      <td className="px-3 py-2">{report.newCases}</td>
-                      <td className="px-3 py-2">{report.criticalCases}</td>
-                      <td className="px-3 py-2">{report.workerId}</td>
-                      <td className="px-3 py-2">
-                        {new Date(report.reportDate || report.createdAt).toLocaleDateString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              <h2 className="mb-3 text-lg font-bold text-slate-900">Recent Reports</h2>
+              {scopedReports.length === 0 ? (
+                <p className="text-sm text-slate-500">No reports available yet.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                        <th className="px-3 py-2">Source</th>
+                        <th className="px-3 py-2">Disease</th>
+                        <th className="px-3 py-2">Area</th>
+                        <th className="px-3 py-2">New</th>
+                        <th className="px-3 py-2">Critical</th>
+                        <th className="px-3 py-2">Worker</th>
+                        <th className="px-3 py-2">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scopedReports.slice(0, 15).map((report) => (
+                        <tr key={report.id} className="border-b border-slate-100 text-slate-700">
+                          <td className="px-3 py-2">{report.reporterRole || "ASHA"}</td>
+                          <td className="px-3 py-2 font-medium text-slate-900">{report.disease}</td>
+                          <td className="px-3 py-2">
+                            {report.location?.village}, {report.location?.district}
+                          </td>
+                          <td className="px-3 py-2">{report.newCases}</td>
+                          <td className="px-3 py-2">{report.criticalCases}</td>
+                          <td className="px-3 py-2">{report.workerId}</td>
+                          <td className="px-3 py-2">
+                            {new Date(report.reportDate || report.createdAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           )}
         </section>
       </div>
